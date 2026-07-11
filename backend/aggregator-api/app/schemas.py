@@ -3,7 +3,25 @@ from typing import Optional
 
 from pydantic import BaseModel
 
+from app.auth.models import UserRole
 from app.services.confidence import ConfidenceLevel
+
+
+class TokenOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    role: UserRole
+    display_name: str
+    agent_id: Optional[str]
+    provider_id: Optional[str]
+
+
+class UserOut(BaseModel):
+    username: str
+    role: UserRole
+    display_name: str
+    agent_id: Optional[str]
+    provider_id: Optional[str]
 
 
 class ProviderBalanceOut(BaseModel):

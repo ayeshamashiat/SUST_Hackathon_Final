@@ -62,9 +62,9 @@ Verify a container's actual environment any time with:
 docker compose exec aggregator-api env   # must show no BKASH_/NAGAD_/ROCKET_ variable
 ```
 
-## Postgres roles (updated Phase 4)
+## Postgres roles (updated Phase 6)
 
-Five roles now exist, each scoped to exactly what it needs - this is
+Six roles now exist, each scoped to exactly what it needs - this is
 enforced by Postgres `GRANT`/`REVOKE`, not just by which connection string a
 service happens to be given:
 
@@ -72,13 +72,21 @@ service happens to be given:
 |---|---|---|---|
 | `bkash_service` / `nagad_service` / `rocket_service` | provider-api | its own provider DB only | its own provider DB only |
 | `sync_service` | sync-service | all 3 provider DBs (read-only) + `shared_db` | `shared_db` only - owns/creates its schema |
-| `shared_service` | aggregator-api (Phase 5, not built yet) | `shared_db` only | nothing - `SELECT`-only, cannot `CREATE`/`INSERT`/`UPDATE` |
+| `shared_service` | aggregator-api | `shared_db` only | nothing - `SELECT`-only, cannot `CREATE`/`INSERT`/`UPDATE` |
+| `aggregator_service` | aggregator-api | `aggregator_db` only | `aggregator_db` only - owns/creates its own schema (users; alerts/cases from Phase 7) |
+
+Note aggregator-api holds **two** credentials, not one: `shared_service`
+(read-only, for the provider-sync projection) and `aggregator_service`
+(read-write, for its own domain data). This is deliberate - see
+`aggregator-api/app/db.py`'s module docstring - rather than punching a
+write-access exception into `shared_db`'s "only sync-service writes here"
+rule, aggregator-api gets a database it actually owns.
 
 This is what makes "only the Sync Service may write to shared_db" and
 "a provider router must never read another provider's database" real
 guarantees rather than conventions - see the boundary checks below.
 
-**If you already have a `pgdata` volume from before Phase 4**: `db-init/init-databases.sh` only runs on a database's *first* initialization, so an existing volume won't pick up the `sync_service` role or `shared_service`'s tightened grants automatically. Either:
+**If you already have a `pgdata` volume from before Phase 4/6**: `db-init/init-databases.sh` only runs on a database's *first* initialization, so an existing volume won't pick up new roles (`sync_service`, `aggregator_service`) or tightened grants automatically. Either:
 - `docker compose down -v` (destructive - wipes all Postgres data, always confirm before running this), then `docker compose up --build`, or
 - apply the equivalent grants live against the running container (see the SQL in `db-init/init-databases.sh` from the `sync_service` role onward - every statement there is safe to run against an already-initialized volume, since it's all `CREATE ROLE`/`GRANT`/`REVOKE`, nothing destructive to existing data).
 
@@ -97,9 +105,15 @@ curl http://localhost:8000/metrics
 docker compose exec postgres psql -U sync_service -d bkash_db -c "UPDATE balances SET emoney_balance = 0;"
 # -> permission denied for table balances
 
-# shared_service (aggregator-api's future role) cannot write shared_db
+# shared_service (aggregator-api's read-only credential) cannot write shared_db
 docker compose exec postgres psql -U shared_service -d shared_db -c "CREATE TABLE probe (id int);"
 # -> permission denied for schema public
+
+# login works against aggregator-api's OWN database (aggregator_db)
+curl -X POST http://localhost:8000/auth/login \
+  -H "Content-Type: application/x-www-form-urlencoded" \
+  -d "username=field.officer&password=Passw0rd!"
+# -> 200, JWT access_token (see docs/CREDENTIALS.md for every seeded demo account)
 ```
 
 Stop everything:
@@ -116,10 +130,12 @@ needed. Never commit `.env` with a real `OPENAI_API_KEY`.
 | Variable | Purpose |
 |---|---|
 | `POSTGRES_SUPERUSER` / `POSTGRES_SUPERUSER_PASSWORD` | Used only by the `postgres` container itself and by `db-init/init-databases.sh` to create the 4 databases + roles. |
-| `BKASH_DB_PASSWORD`, `NAGAD_DB_PASSWORD`, `ROCKET_DB_PASSWORD`, `SHARED_DB_PASSWORD` | Passwords for the per-database restricted roles created at first startup. |
-| `BKASH_DATABASE_URL`, `NAGAD_DATABASE_URL`, `ROCKET_DATABASE_URL`, `SHARED_DATABASE_URL` | Full connection strings each service uses. A service only ever receives the URL(s) it's allowed to use. |
+| `BKASH_DB_PASSWORD`, `NAGAD_DB_PASSWORD`, `ROCKET_DB_PASSWORD`, `SHARED_DB_PASSWORD`, `AGGREGATOR_DB_PASSWORD` | Passwords for the per-database restricted roles created at first startup. |
+| `BKASH_DATABASE_URL`, `NAGAD_DATABASE_URL`, `ROCKET_DATABASE_URL`, `SHARED_DATABASE_URL`, `AGGREGATOR_DATABASE_URL` | Full connection strings each service uses. A service only ever receives the URL(s) it's allowed to use. |
 | `SYNC_POLL_INTERVAL_SECONDS` | How often sync-service polls the provider databases (used from Phase 3). |
-| `OPENAI_API_KEY` | Optional. Leave blank to keep `aggregator-api`'s LLM helper in mock mode (added Phase 5). Never make a live call without your explicit go-ahead, per your rules. |
+| `JWT_SECRET_KEY`, `ACCESS_TOKEN_EXPIRE_MINUTES` | Auth token signing (Phase 6). Dev-only default secret - override for any non-local deployment. |
+| `DEMO_LOGIN_CODE` | Shared password for every seeded demo account (Phase 6) - see `docs/CREDENTIALS.md`. |
+| `OPENAI_API_KEY` | Optional, not yet used (LLM helper is Phase 8, not built). Never make a live call without your explicit go-ahead, per your rules. |
 
 ## Startup sequence
 

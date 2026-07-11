@@ -1,9 +1,7 @@
-export type FeedHealth = "OK" | "STALE" | "CONFLICTING";
-export type ConfidenceLevel = "HIGH" | "MEDIUM" | "LOW";
-export type DataQuality = "OK" | "DEGRADED";
-export type ForecastStatus = "STABLE" | "AT_RISK" | "INSUFFICIENT_DATA";
-export type CaseStatus = "NEW" | "ACKNOWLEDGED" | "IN_PROGRESS" | "ESCALATED" | "RESOLVED";
-export type AlertCategory = "LIQUIDITY" | "ANOMALY" | "DATA_QUALITY";
+// Auth types mirror backend/aggregator-api/app/schemas.py's TokenOut/UserOut
+// and app/auth/models.py's UserRole. Data types mirror the rest of
+// schemas.py - aggregator-api is the only backend service this frontend
+// talks to. There is no /alerts or /cases endpoint yet (Phase 7, not built).
 
 export type UserRole = "AGENT" | "FIELD_OFFICER" | "AREA_MANAGER" | "PROVIDER_OPS" | "RISK_COMPLIANCE" | "MANAGEMENT";
 
@@ -24,6 +22,18 @@ export interface TokenOut {
   provider_id: string | null;
 }
 
+export interface UserOut {
+  username: string;
+  role: UserRole;
+  display_name: string;
+  agent_id: string | null;
+  provider_id: string | null;
+}
+
+export type ConfidenceLevel = "HIGH" | "MEDIUM" | "LOW";
+export type SyncStatus = "ok" | "delayed" | "failed" | "conflicting";
+export type ForecastStatus = "STABLE" | "AT_RISK" | "INSUFFICIENT_DATA";
+
 export interface Agent {
   id: string;
   name: string;
@@ -31,25 +41,31 @@ export interface Agent {
 }
 
 export interface ProviderBalanceOut {
-  provider_id: string;
-  provider_name: string;
-  color: string;
-  balance: number;
-  feed_health: FeedHealth;
-  feed_last_update_at: string;
+  provider: string;
+  balance: number | null;
+  staleness_seconds: number | null;
+  sync_status: SyncStatus | null;
+  confidence: ConfidenceLevel;
+  confidence_note: string;
 }
 
-export interface AgentBalancesOut {
+export interface AgentAggregateOut {
   agent_id: string;
-  agent_name: string;
-  area: string;
   cash_balance: number;
-  cash_updated_at: string;
+  cash_confidence: ConfidenceLevel;
+  cash_confidence_note: string;
   providers: ProviderBalanceOut[];
+  overall_confidence: ConfidenceLevel;
+}
+
+export interface TopContributor {
+  provider: string;
+  amount: number;
+  share: number;
 }
 
 export interface ForecastOut {
-  target: string;
+  target: string; // "CASH" or a provider id
   target_label: string;
   status: ForecastStatus;
   current_balance: number;
@@ -58,60 +74,41 @@ export interface ForecastOut {
   minutes_to_shortage: number | null;
   confidence: ConfidenceLevel;
   confidence_note: string;
-  data_quality: DataQuality;
-  top_contributors: { provider_id: string; amount: number; share: number }[];
-  message_en: string;
-  message_bn: string;
+  top_contributors: TopContributor[];
 }
 
-export interface CaseEventOut {
-  id: number;
-  event_type: string;
-  note: string | null;
-  actor: string;
-  created_at: string;
-}
-
-export interface CaseOut {
-  id: number;
-  alert_id: number;
-  stakeholder_role: string;
-  owner: string;
-  status: CaseStatus;
-  recommended_action: string;
-  created_at: string;
-  updated_at: string;
-  events: CaseEventOut[];
-}
-
-export interface AlertOut {
-  id: number;
-  category: AlertCategory;
-  metric: string;
-  severity: "LOW" | "MEDIUM" | "HIGH";
+export interface AnomalyOut {
   agent_id: string;
-  agent_name: string;
-  provider_id: string | null;
-  provider_name: string | null;
-  title: string;
-  message_en: string;
-  message_bn: string;
-  evidence: Record<string, unknown>;
+  provider: string;
+  flagged: boolean;
+  window_count: number;
+  baseline_mean: number;
+  baseline_stdev: number;
+  z_score: number | null;
+  unique_customers: number;
+  concentration_ratio: number | null;
+  amount_min: number;
+  amount_max: number;
+  amount_coefficient_of_variation: number | null;
+  sample_transaction_ids: number[];
+  window_start: string | null;
+  window_end: string | null;
   confidence: ConfidenceLevel;
-  confidence_note: string;
-  data_quality: DataQuality;
-  created_at: string;
-  case: CaseOut | null;
+  message: string;
 }
 
-export interface Transaction {
-  id: number;
+export interface AmountOutlierOut {
   agent_id: string;
-  provider_id: string;
-  type: "CASH_IN" | "CASH_OUT";
-  amount: number;
-  customer_ref: string;
-  area: string;
-  status: "SUCCESS" | "FAILED";
-  created_at: string;
+  provider: string;
+  transaction_type: string;
+  flagged: boolean;
+  evaluated_transaction_id: number | null;
+  evaluated_amount: number | null;
+  evaluated_at: string | null;
+  historical_sample_size: number;
+  historical_mean: number | null;
+  historical_stdev: number | null;
+  z_score: number | null;
+  confidence: ConfidenceLevel;
+  message: string;
 }

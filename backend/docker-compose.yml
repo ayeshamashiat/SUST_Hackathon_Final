@@ -9,6 +9,7 @@ services:
       ROCKET_DB_PASSWORD: ${ROCKET_DB_PASSWORD:-rocket_pw}
       SHARED_DB_PASSWORD: ${SHARED_DB_PASSWORD:-shared_pw}
       SYNC_SERVICE_DB_PASSWORD: ${SYNC_SERVICE_DB_PASSWORD:-sync_pw}
+      AGGREGATOR_DB_PASSWORD: ${AGGREGATOR_DB_PASSWORD:-aggregator_pw}
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db-init:/docker-entrypoint-initdb.d:ro
@@ -71,7 +72,11 @@ services:
     build: ./aggregator-api
     environment:
       SHARED_DATABASE_URL: ${SHARED_DATABASE_URL}
+      AGGREGATOR_DATABASE_URL: ${AGGREGATOR_DATABASE_URL}
       SYNC_STALE_AFTER_SECONDS: ${SYNC_STALE_AFTER_SECONDS:-60}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-insecure-secret-change-me-before-any-real-deployment}
+      ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-480}
+      DEMO_LOGIN_CODE: ${DEMO_LOGIN_CODE:-Passw0rd!}
     depends_on:
       postgres:
         condition: service_healthy

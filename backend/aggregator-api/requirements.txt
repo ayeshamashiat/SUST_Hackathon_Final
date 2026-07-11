@@ -4,3 +4,6 @@ sqlmodel
 psycopg2-binary
 pydantic-settings
 httpx
+passlib
+PyJWT
+python-multipart

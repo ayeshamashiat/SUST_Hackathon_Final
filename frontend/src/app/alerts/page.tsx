@@ -1,34 +1,42 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { AlertCard } from "@/components/AlertCard";
+import { AgentSelector } from "@/components/AgentSelector";
+import { HistoricalOutlierCard, VelocityAnomalyCard } from "@/components/AnomalyCard";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import type { Agent, AlertOut } from "@/lib/types";
+import { AGENTS, PROVIDERS, type ProviderId } from "@/lib/agents";
+import type { AmountOutlierOut, AnomalyOut } from "@/lib/types";
 
-const POLL_MS = 5000;
+const POLL_MS = 8000;
 
-export default function AlertsPage() {
+export default function AnomalyReviewPage() {
   const { user } = useAuth();
   const isAgentRole = user?.role === "AGENT";
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [agentFilter, setAgentFilter] = useState<string>("");
-  const [alerts, setAlerts] = useState<AlertOut[]>([]);
+  const [selectedAgent, setSelectedAgent] = useState<string | null>(isAgentRole ? user!.agent_id : AGENTS[0]?.id ?? null);
+  const [providerFilter, setProviderFilter] = useState<ProviderId | "">(
+    user?.role === "PROVIDER_OPS" ? ((user.provider_id as ProviderId) ?? "") : ""
+  );
+  const [velocityResults, setVelocityResults] = useState<AnomalyOut[]>([]);
+  const [historicalResults, setHistoricalResults] = useState<AmountOutlierOut[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [refreshKey, setRefreshKey] = useState(0);
 
   useEffect(() => {
-    api.listAgents().then(setAgents).catch((e) => setError(String(e)));
-  }, []);
-
-  useEffect(() => {
+    if (!selectedAgent) return;
     let cancelled = false;
 
     async function refresh() {
       try {
-        const list = await api.listAlerts({ agentId: agentFilter || undefined, limit: 100 });
+        const provider = providerFilter || undefined;
+        const [velocity, historical] = await Promise.all([
+          api.getAnomalies(selectedAgent!, provider),
+          Promise.all(
+            (provider ? [provider] : PROVIDERS).map((p) => api.getHistoricalOutliers(selectedAgent!, p))
+          ).then((lists) => lists.flat()),
+        ]);
         if (!cancelled) {
-          setAlerts(list);
+          setVelocityResults(velocity);
+          setHistoricalResults(historical);
           setError(null);
         }
       } catch (e) {
@@ -42,20 +50,24 @@ export default function AlertsPage() {
       cancelled = true;
       clearInterval(interval);
     };
-  }, [agentFilter, refreshKey]);
-
-  const openAlerts = alerts.filter((a) => a.case && a.case.status !== "RESOLVED");
-  const resolvedAlerts = alerts.filter((a) => a.case && a.case.status === "RESOLVED");
+  }, [selectedAgent, providerFilter]);
 
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold mb-1">Alerts &amp; coordination</h1>
+        <h1 className="text-xl font-semibold mb-1">Anomaly review</h1>
         <p className="text-sm text-slate-600">
-          Every alert shows its evidence and confidence, and is routed to a named owner with a recommended next
-          step. These are advisory signals for human review - not a fraud determination and not an automated
-          action.
+          Two independent, explainable checks per provider: a burst-activity detector (frequency + account
+          clustering) and a per-agent historical baseline (is this transaction unusual for what this specific agent
+          normally does). Both are advisory signals for human review - never a fraud determination, never an
+          automated action.
         </p>
+      </div>
+
+      <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
+        Alert routing, ownership, acknowledgement, escalation, and case resolution are not yet implemented in the
+        backend - this page shows the underlying detection evidence directly. The coordination workflow is the next
+        phase of this build.
       </div>
 
       {error && (
@@ -64,42 +76,45 @@ export default function AlertsPage() {
         </div>
       )}
 
-      {!isAgentRole && (
-        <div className="flex items-center gap-2">
-          <label className="text-xs text-slate-500">Filter by agent</label>
-          <select
-            value={agentFilter}
-            onChange={(e) => setAgentFilter(e.target.value)}
-            className="rounded border border-slate-300 bg-white px-2 py-1 text-sm"
-          >
-            <option value="">All agents</option>
-            {agents.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
-        </div>
-      )}
+      <div className="flex flex-wrap items-center gap-4">
+        {!isAgentRole && <AgentSelector agents={AGENTS} selected={selectedAgent} onSelect={setSelectedAgent} />}
+        {user?.role !== "PROVIDER_OPS" && (
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-slate-500">Provider</label>
+            <select
+              value={providerFilter}
+              onChange={(e) => setProviderFilter(e.target.value as ProviderId | "")}
+              className="rounded border border-slate-300 bg-white px-2 py-1 text-sm"
+            >
+              <option value="">All providers</option>
+              {PROVIDERS.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
 
       <div className="space-y-3">
-        <div className="text-xs uppercase tracking-wide text-slate-500">Open ({openAlerts.length})</div>
-        {openAlerts.length === 0 && (
-          <p className="text-sm text-slate-500">No open alerts right now - the outlet(s) look healthy.</p>
-        )}
-        {openAlerts.map((alert) => (
-          <AlertCard key={alert.id} alert={alert} onUpdated={() => setRefreshKey((k) => k + 1)} />
+        <div className="text-xs uppercase tracking-wide text-slate-500">
+          Burst activity ({velocityResults.filter((r) => r.flagged).length} of {velocityResults.length} flagged)
+        </div>
+        {velocityResults.map((r) => (
+          <VelocityAnomalyCard key={`${r.agent_id}-${r.provider}`} result={r} />
         ))}
       </div>
 
-      {resolvedAlerts.length > 0 && (
-        <div className="space-y-3">
-          <div className="text-xs uppercase tracking-wide text-slate-500">Resolved ({resolvedAlerts.length})</div>
-          {resolvedAlerts.map((alert) => (
-            <AlertCard key={alert.id} alert={alert} onUpdated={() => setRefreshKey((k) => k + 1)} />
-          ))}
+      <div className="space-y-3">
+        <div className="text-xs uppercase tracking-wide text-slate-500">
+          Unusual for this agent ({historicalResults.filter((r) => r.flagged).length} of {historicalResults.length}{" "}
+          flagged)
         </div>
-      )}
+        {historicalResults.map((r) => (
+          <HistoricalOutlierCard key={`${r.agent_id}-${r.provider}`} result={r} />
+        ))}
+      </div>
     </div>
   );
 }

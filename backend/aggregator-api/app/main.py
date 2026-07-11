@@ -1,9 +1,22 @@
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.routers import aggregate
+from app.auth.seed import seed_users
+from app.db import aggregator_session, init_aggregator_schema
+from app.routers import aggregate, auth
 
-app = FastAPI(title="Aggregator API (alerts, forecasts, anomaly detection)")
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    init_aggregator_schema()
+    with aggregator_session() as session:
+        seed_users(session)
+    yield
+
+
+app = FastAPI(title="Aggregator API (alerts, forecasts, anomaly detection)", lifespan=lifespan)
 
 # Frontend compatibility: this is the only service the frontend talks to.
 app.add_middleware(
@@ -14,6 +27,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
 app.include_router(aggregate.router)
 
 

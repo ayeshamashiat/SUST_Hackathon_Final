@@ -4,11 +4,24 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     shared_database_url: str
 
+    # aggregator-api's own database (users, alerts, cases) - separate from
+    # shared_database_url above, which is read-only. See db-init/
+    # init-databases.sh for why these are deliberately two different
+    # credentials against two different databases.
+    aggregator_database_url: str
+
     # Reads the SAME env var sync-service uses (SYNC_STALE_AFTER_SECONDS) -
     # confidence scoring here is meaningless if it disagrees with the value
     # that actually decided a row's sync_status, so this deliberately isn't
     # a second, independently-tunable constant.
     sync_stale_after_seconds: float = 60.0
+
+    # --- Auth ---
+    # Dev-only default; override via env var for any non-local deployment.
+    jwt_secret_key: str = "dev-insecure-secret-change-me-before-any-real-deployment"
+    jwt_algorithm: str = "HS256"
+    access_token_expire_minutes: int = 480
+    demo_login_code: str = "Passw0rd!"
 
     class Config:
         env_file = ".env"

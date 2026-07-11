@@ -3,32 +3,21 @@
 import { useEffect, useState } from "react";
 import { AgentSelector } from "@/components/AgentSelector";
 import { BalanceCard } from "@/components/BalanceCard";
+import { ConfidenceBadge } from "@/components/Badges";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
-import { formatBDT, formatRelative } from "@/lib/format";
-import type { Agent, AgentBalancesOut, ForecastOut, Transaction } from "@/lib/types";
+import { AGENTS, PROVIDER_COLOR, PROVIDER_LABEL, type ProviderId } from "@/lib/agents";
+import type { AgentAggregateOut, ForecastOut } from "@/lib/types";
 
-const POLL_MS = 4000;
+const POLL_MS = 5000;
 
 export default function DashboardPage() {
   const { user } = useAuth();
   const isAgentRole = user?.role === "AGENT";
-  const [agents, setAgents] = useState<Agent[]>([]);
-  const [selectedAgent, setSelectedAgent] = useState<string | null>(isAgentRole ? user!.agent_id : null);
-  const [balances, setBalances] = useState<AgentBalancesOut | null>(null);
+  const [selectedAgent, setSelectedAgent] = useState<string | null>(isAgentRole ? user!.agent_id : AGENTS[0]?.id ?? null);
+  const [aggregate, setAggregate] = useState<AgentAggregateOut | null>(null);
   const [forecasts, setForecasts] = useState<ForecastOut[]>([]);
-  const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    api
-      .listAgents()
-      .then((list) => {
-        setAgents(list);
-        setSelectedAgent((prev) => prev ?? list[0]?.id ?? null);
-      })
-      .catch((e) => setError(String(e)));
-  }, []);
 
   useEffect(() => {
     if (!selectedAgent) return;
@@ -36,15 +25,10 @@ export default function DashboardPage() {
 
     async function refresh() {
       try {
-        const [b, f, t] = await Promise.all([
-          api.getBalances(selectedAgent!),
-          api.getForecast(selectedAgent!),
-          api.getTransactions(selectedAgent!, 10),
-        ]);
+        const [agg, fc] = await Promise.all([api.getAgentAggregate(selectedAgent!), api.getForecast(selectedAgent!)]);
         if (!cancelled) {
-          setBalances(b);
-          setForecasts(f);
-          setTransactions(t);
+          setAggregate(agg);
+          setForecasts(fc);
           setError(null);
         }
       } catch (e) {
@@ -61,78 +45,55 @@ export default function DashboardPage() {
   }, [selectedAgent]);
 
   const cashForecast = forecasts.find((f) => f.target === "CASH");
-  const providerForecast = (providerId: string) => forecasts.find((f) => f.target === providerId);
+  const providerForecast = (provider: string) => forecasts.find((f) => f.target === provider);
 
   return (
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold mb-1">Unified outlet view</h1>
         <p className="text-sm text-slate-600">
-          One shared cash drawer, three separate provider balances. Nothing here merges provider funds - it is a
-          read-only combined view for decision support.
+          One shared cash drawer, three separate provider balances. Cash is a derived, read-only figure computed
+          from synced transaction history - not an authoritative provider balance, and nothing here merges provider
+          funds.
         </p>
       </div>
 
       {error && (
         <div className="rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm text-rose-700">
-          Could not reach the backend API ({error}). Is the backend running on port 8000?
+          Could not reach the backend API ({error}). Is aggregator-api running on port 8000?
         </div>
       )}
 
-      {!isAgentRole && <AgentSelector agents={agents} selected={selectedAgent} onSelect={setSelectedAgent} />}
+      {!isAgentRole && <AgentSelector agents={AGENTS} selected={selectedAgent} onSelect={setSelectedAgent} />}
 
-      {balances && (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <BalanceCard
-            label="Shared Cash Reserve"
-            color="#22c55e"
-            balance={balances.cash_balance}
-            forecast={cashForecast}
-          />
-          {balances.providers.map((p) => (
+      {aggregate && (
+        <>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
             <BalanceCard
-              key={p.provider_id}
-              label={p.provider_name}
-              color={p.color}
-              balance={p.balance}
-              feedHealth={p.feed_health}
-              feedUpdatedAt={p.feed_last_update_at}
-              forecast={providerForecast(p.provider_id)}
+              label="Shared Cash Reserve (derived)"
+              color="#22c55e"
+              balance={aggregate.cash_balance}
+              forecast={cashForecast}
             />
-          ))}
-        </div>
-      )}
+            {aggregate.providers.map((p) => (
+              <BalanceCard
+                key={p.provider}
+                label={PROVIDER_LABEL[p.provider as ProviderId] ?? p.provider}
+                color={PROVIDER_COLOR[p.provider as ProviderId] ?? "#64748b"}
+                balance={p.balance}
+                syncStatus={p.sync_status}
+                stalenessSeconds={p.staleness_seconds}
+                forecast={providerForecast(p.provider)}
+              />
+            ))}
+          </div>
 
-      <div className="rounded-xl border border-slate-200 bg-white">
-        <div className="px-4 py-3 border-b border-slate-200 text-sm font-medium">Recent transactions</div>
-        <div className="divide-y divide-slate-200 max-h-80 overflow-y-auto">
-          {transactions.length === 0 && <div className="px-4 py-3 text-sm text-slate-500">No activity yet.</div>}
-          {transactions.map((t) => (
-            <div key={t.id} className="px-4 py-2.5 flex items-center justify-between text-sm">
-              <div className="flex items-center gap-3">
-                <span
-                  className={`inline-flex w-16 justify-center rounded px-1.5 py-0.5 text-xs font-medium ${
-                    t.type === "CASH_OUT" ? "bg-sky-100 text-sky-700" : "bg-fuchsia-100 text-fuchsia-700"
-                  }`}
-                >
-                  {t.type === "CASH_OUT" ? "Cash-out" : "Cash-in"}
-                </span>
-                <span className="text-slate-600 uppercase text-xs">{t.provider_id}</span>
-                <span className="text-slate-500 text-xs">{t.customer_ref}</span>
-                {t.status === "FAILED" && (
-                  <span className="rounded bg-rose-100 px-1.5 py-0.5 text-xs text-rose-700">
-                    declined - insufficient balance
-                  </span>
-                )}
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="tabular-nums">{formatBDT(t.amount)}</span>
-                <span className="text-xs text-slate-500 w-14 text-right">{formatRelative(t.created_at)}</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
+          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 flex items-center justify-between gap-4 text-sm">
+            <span className="text-slate-600">Overall confidence for this agent</span>
+            <ConfidenceBadge level={aggregate.overall_confidence} />
+          </div>
+        </>
+      )}
     </div>
   );
 }

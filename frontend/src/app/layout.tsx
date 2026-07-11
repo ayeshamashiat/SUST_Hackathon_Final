@@ -43,7 +43,7 @@ export default function RootLayout({
                   Dashboard
                 </Link>
                 <Link href="/alerts" className="hover:text-emerald-700 transition-colors">
-                  Alerts &amp; Cases
+                  Anomaly Review
                 </Link>
                 <UserBadge />
               </nav>

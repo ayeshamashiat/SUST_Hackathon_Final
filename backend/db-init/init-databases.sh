@@ -1,21 +1,29 @@
 #!/bin/bash
 set -euo pipefail
 
-# Creates four logically separate databases (bkash_db, nagad_db, rocket_db,
-# shared_db) and one restricted-privilege role per database, plus a fifth
-# cross-cutting role (sync_service) for the Sync Service.
+# Creates five logically separate databases (bkash_db, nagad_db, rocket_db,
+# shared_db, aggregator_db) and one restricted-privilege role per database,
+# plus a sixth cross-cutting role (sync_service) for the Sync Service.
 #
 # Provider boundary: each provider role can only connect to its own
 # database - enforced at the Postgres permission layer, not just in
 # application code.
 #
-# shared_db write boundary: `shared_service` (aggregator-api's future
-# credential, Phase 5) gets CONNECT + SELECT only - it can never write here.
-# `sync_service` is the only role with write access to shared_db, and is
-# also the only role (besides each provider's own service role) that can
+# shared_db write boundary: `shared_service` (aggregator-api's credential
+# for the *projection* data) gets CONNECT + SELECT only - it can never write
+# here. `sync_service` is the only role with write access to shared_db, and
+# is also the only role (besides each provider's own service role) that can
 # read the three provider databases - a deliberately separate credential
 # from bkash_service/nagad_service/rocket_service, so even a compromised
 # sync-service cannot write provider data.
+#
+# aggregator_db is a SEPARATE database for state that genuinely belongs to
+# aggregator-api itself - users, alerts, cases - none of which is a
+# provider-sync projection. Giving it its own database (with its own
+# read-write role, `aggregator_service`) means the "only sync_service writes
+# shared_db" rule never needs an exception: aggregator-api writes its own
+# domain data to its own database, and only ever reads (never writes)
+# shared_db via the separate, still-read-only `shared_service` credential.
 
 create_provider_db_and_role() {
   local db_name="$1"
@@ -72,3 +80,8 @@ psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "shared_db" <<-EOSQ
   GRANT ALL PRIVILEGES ON SCHEMA public TO sync_service;
   ALTER DEFAULT PRIVILEGES FOR ROLE sync_service IN SCHEMA public GRANT SELECT ON TABLES TO shared_service;
 EOSQL
+
+# aggregator_db: aggregator-api's own database (users, alerts, cases -
+# Phase 6+). aggregator_service owns and fully controls this schema; no
+# other role gets any access to it.
+create_provider_db_and_role "aggregator_db" "aggregator_service" "${AGGREGATOR_DB_PASSWORD:-aggregator_pw}"
