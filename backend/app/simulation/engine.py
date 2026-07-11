@@ -8,7 +8,7 @@ as special-cased branches here.
 
 import asyncio
 import random
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional
 
 from sqlmodel import Session, select
@@ -25,7 +25,7 @@ from app.models.models import (
     TransactionStatus,
     TransactionType,
 )
-from app.simulation.profiles import AGENT_PROFILES, AgentProfile, ProviderMix
+from app.simulation.profiles import AGENT_PROFILES, PROVIDERS, AgentProfile, ProviderMix
 
 _burst_counters: dict[str, int] = {}
 _sim_start_time: Optional[datetime] = None
@@ -188,6 +188,53 @@ def tick(now: Optional[datetime] = None) -> list[str]:
             evaluate_agent(session, agent_id, now=now)
 
     return list(touched_agents)
+
+
+def run_scenario(
+    *, provider_id: str, demand_multiplier: float, duration_minutes: int, transaction_rate: float, cash_out_ratio: float
+) -> dict:
+    """Inject a bounded what-if demand stream through the regular pipeline.
+
+    Transactions use the same balance mutation function as the background
+    simulator, followed by the same feed heartbeat and alert evaluation.
+    """
+    if provider_id not in {known_provider_id for known_provider_id, _, _ in PROVIDERS}:
+        raise ValueError("Unknown provider")
+    if demand_multiplier <= 0 or duration_minutes <= 0 or transaction_rate <= 0 or not 0 <= cash_out_ratio <= 1:
+        raise ValueError("Scenario parameters are outside their allowed ranges")
+
+    event_count = max(1, round(duration_minutes * transaction_rate))
+    now = datetime.utcnow()
+    touched_agents: set[str] = set()
+    alerts_created = 0
+
+    with session_scope() as session:
+        profiles = list(AGENT_PROFILES.values())
+        for index in range(event_count):
+            profile = profiles[index % len(profiles)]
+            event_time = now - timedelta(minutes=duration_minutes) + timedelta(minutes=(duration_minutes * (index + 1) / event_count))
+            is_cash_out = (index / max(event_count - 1, 1)) < cash_out_ratio
+            # A deterministic amount keeps what-if runs reproducible enough
+            # for demos while still going through the real transaction path.
+            amount = round((1_000.0 + (index % 5) * 400.0) * demand_multiplier, 2)
+            _apply_transaction(
+                session, profile.agent_id, provider_id,
+                TransactionType.CASH_OUT if is_cash_out else TransactionType.CASH_IN,
+                amount, f"SCENARIO-{provider_id}-{index:04d}", profile.area, event_time,
+            )
+            touched_agents.add(profile.agent_id)
+
+        for feed in session.exec(select(DataFeedStatus)):
+            if not feed.frozen:
+                feed.last_update_at = now
+                feed.health = FeedHealth.OK
+                session.add(feed)
+        session.commit()
+
+        for agent_id in touched_agents:
+            alerts_created += len(evaluate_agent(session, agent_id, now=now))
+
+    return {"transactions_generated": event_count, "agents_affected": sorted(touched_agents), "alerts_created": alerts_created}
 
 
 def set_feed_frozen(agent_id: str, provider_id: str, frozen: bool, note: Optional[str] = None) -> None:

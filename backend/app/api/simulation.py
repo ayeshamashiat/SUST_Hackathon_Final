@@ -1,13 +1,14 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 
 from app.core.database import get_session
 from app.models.models import Agent, DataFeedStatus
-from app.schemas.schemas import DegradeFeedIn
+from app.schemas.schemas import DegradeFeedIn, ScenarioIn
 from app.simulation import engine as sim_engine
 from app.simulation.seed import is_seeded, seed
 
 router = APIRouter(prefix="/simulation", tags=["simulation"])
+scenario_router = APIRouter(prefix="/simulate", tags=["simulation"])
 
 
 @router.get("/status")
@@ -44,3 +45,18 @@ def degrade_feed(body: DegradeFeedIn):
         note="Manually degraded for demo purposes." if body.degrade else None,
     )
     return {"status": "ok"}
+
+
+@scenario_router.post("/scenario")
+def simulate_scenario(body: ScenarioIn):
+    try:
+        result = sim_engine.run_scenario(
+            provider_id=body.provider,
+            demand_multiplier=body.demand_multiplier,
+            duration_minutes=body.duration_minutes,
+            transaction_rate=body.transaction_rate,
+            cash_out_ratio=body.cash_out_ratio,
+        )
+    except ValueError as exc:
+        raise HTTPException(422, str(exc)) from exc
+    return {"status": "completed", "scenario": body.model_dump(), **result}

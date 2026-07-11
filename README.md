@@ -20,11 +20,13 @@ Useful endpoints:
 - `GET /agents`
 - `GET /agents/{agent_id}/balances`
 - `GET /agents/{agent_id}/forecast`
+- `GET /aggregate/forecast`
 - `GET /agents/{agent_id}/transactions`
 - `GET /alerts`
 - `POST /alerts/{id}/acknowledge`, `POST /alerts/{id}/escalate`, `POST /alerts/{id}/resolve`
 - `GET /cases/{case_id}` and `PATCH /cases/{case_id}`
 - `POST /simulation/seed`, `POST /simulation/reset`, `POST /simulation/degrade-feed`
+- `POST /simulate/scenario`
 
 Run backend tests:
 

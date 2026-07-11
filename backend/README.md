@@ -20,6 +20,7 @@ The service runs at `http://localhost:8000`. On startup it initializes SQLite, s
 - `GET /agents`
 - `GET /agents/{agent_id}/balances`
 - `GET /agents/{agent_id}/forecast`
+- `GET /aggregate/forecast`
 - `GET /agents/{agent_id}/transactions`
 - `GET /alerts`
 - `GET /alerts/{alert_id}`
@@ -32,6 +33,7 @@ The service runs at `http://localhost:8000`. On startup it initializes SQLite, s
 - `POST /simulation/seed`
 - `POST /simulation/reset`
 - `POST /simulation/degrade-feed`
+- `POST /simulate/scenario`
 
 ## Checks
 

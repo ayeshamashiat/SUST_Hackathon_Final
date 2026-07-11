@@ -109,3 +109,18 @@ class DegradeFeedIn(BaseModel):
     agent_id: str
     provider_id: str
     degrade: bool
+
+
+class ScenarioIn(BaseModel):
+    provider: str
+    demand_multiplier: float = 1.0
+    duration_minutes: int = 30
+    transaction_rate: float = 2.0
+    cash_out_ratio: float = 0.7
+
+
+class AggregateForecastOut(BaseModel):
+    agent_id: str
+    agent_name: str
+    area: str
+    forecasts: list[ForecastOut]

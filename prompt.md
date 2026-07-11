@@ -1,11 +1,11 @@
 # Commit Prompt
 
-## Phase 7 — Offline Evaluation
+## Phase 8 — What-if Simulator
 
-Continue from the current codebase.
+Continue from the current architecture.
 
-Evaluate anomaly detection quality using simulator labels, `is_injected_anomaly`.
+Add `POST /simulate/scenario` with provider, demand multiplier, duration, transaction rate, and cash-out ratio inputs.
 
-Calculate precision, recall, and false-positive rate separately for normal traffic, Eid spike, and injected anomalies. Ensure Eid spikes are not incorrectly flagged.
+Feed the request through simulator synchronization, forecasting, and alert generation without a shortcut. Effects must immediately appear in `GET /aggregate/forecast` and `GET /alerts`.
 
-Produce JSON and Markdown reports suitable for the README and presentation.
+Provide example scenarios.
