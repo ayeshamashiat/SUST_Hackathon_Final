@@ -15,11 +15,11 @@ def init_db() -> None:
     columns = {column["name"] for column in inspect(engine).get_columns("alert")}
     if "message_banglish" not in columns:
         with engine.begin() as connection:
-            connection.execute(text("ALTER TABLE alert ADD COLUMN message_banglish TEXT NOT NULL DEFAULT ''"))
+            connection.execute(text('ALTER TABLE "alert" ADD COLUMN message_banglish TEXT NOT NULL DEFAULT \'\''))
     transaction_columns = {column["name"] for column in inspect(engine).get_columns("transaction")}
     if "is_injected_anomaly" not in transaction_columns:
         with engine.begin() as connection:
-            connection.execute(text("ALTER TABLE transaction ADD COLUMN is_injected_anomaly BOOLEAN NOT NULL DEFAULT 0"))
+            connection.execute(text('ALTER TABLE "transaction" ADD COLUMN is_injected_anomaly BOOLEAN NOT NULL DEFAULT 0'))
 
 
 def get_session():

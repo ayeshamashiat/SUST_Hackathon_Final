@@ -1,11 +1,36 @@
 # Commit Prompt
 
-## Phase 8 — What-if Simulator
+## Phase 9 — Validation, Metrics and Documentation
 
-Continue from the current architecture.
+Continue from the current project.
 
-Add `POST /simulate/scenario` with provider, demand multiplier, duration, transaction rate, and cash-out ratio inputs.
+### Provider Isolation Test
+Create an automated test proving that each provider router cannot access another provider's raw database. Do the same for every provider.
 
-Feed the request through simulator synchronization, forecasting, and alert generation without a shortcut. Effects must immediately appear in `GET /aggregate/forecast` and `GET /alerts`.
+### Metrics Endpoint
+Implement `GET /metrics` and include:
+- sync latency
+- forecast lead time
+- anomaly precision
+- recall
+- false positive rate
+- alert explanation coverage
+- provider sync health
 
-Provide example scenarios.
+### Documentation
+Update:
+- README
+- deployment guide
+- architecture diagram
+- API documentation
+
+Document assumptions clearly.
+
+### Final Deliverables
+Provide:
+- project summary
+- endpoint summary
+- architecture summary
+- remaining improvements
+
+Then stop.

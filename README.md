@@ -25,6 +25,7 @@ Useful endpoints:
 - `GET /alerts`
 - `POST /alerts/{id}/acknowledge`, `POST /alerts/{id}/escalate`, `POST /alerts/{id}/resolve`
 - `GET /cases/{case_id}` and `PATCH /cases/{case_id}`
+- `GET /metrics`
 - `POST /simulation/seed`, `POST /simulation/reset`, `POST /simulation/degrade-feed`
 - `POST /simulate/scenario`
 
@@ -66,3 +67,9 @@ npm run build
 6. Trigger safe fallback with `POST /simulation/degrade-feed` and confirm the UI/API show delayed feed status and low-confidence data quality.
 
 All balances and transactions are simulated. The app never connects to real wallets and never labels a customer or transaction as fraud.
+
+## Assumptions And Validation Notes
+
+- Each provider is treated as a logically isolated ledger keyed by `(agent_id, provider_id)`; the prototype does not support cross-provider transfers or shared settlement.
+- The metrics endpoint reports operational proxies rather than production-grade SLA telemetry; values are derived from the local simulation state and should be interpreted as demo evidence.
+- Provider isolation is enforced by the data model and router-level filters, and the regression tests cover that boundary for bKash, Nagad, and Rocket.

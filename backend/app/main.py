@@ -8,6 +8,7 @@ from app.api.agents import router as agents_router
 from app.api.aggregate import router as aggregate_router
 from app.api.alerts import router as alerts_router
 from app.api.cases import router as cases_router
+from app.api.metrics import router as metrics_router
 from app.api.simulation import router as simulation_router, scenario_router
 from app.core.database import engine, init_db
 from app.simulation import engine as sim_engine
@@ -45,6 +46,7 @@ app.include_router(agents_router)
 app.include_router(aggregate_router)
 app.include_router(alerts_router)
 app.include_router(cases_router)
+app.include_router(metrics_router)
 app.include_router(simulation_router)
 app.include_router(scenario_router)
 
