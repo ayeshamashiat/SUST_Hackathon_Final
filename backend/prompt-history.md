@@ -283,5 +283,5 @@ Final deliverables:
 Exit check:
 
 - Full Section 16 checklist satisfied.
-- Final presentation is ready.
+- Final presentation is ready
 
