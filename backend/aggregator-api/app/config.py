@@ -16,19 +16,16 @@ class Settings(BaseSettings):
     # a second, independently-tunable constant.
     sync_stale_after_seconds: float = 60.0
 
-<<<<<<< HEAD
     # Optional: services/llm.py falls back to a deterministic recommendation
     # whenever this is blank, so it is never required for alerts to work.
     openai_api_key: str = ""
     openai_model: str = "gpt-4o-mini"
-=======
     # --- Auth ---
     # Dev-only default; override via env var for any non-local deployment.
     jwt_secret_key: str = "dev-insecure-secret-change-me-before-any-real-deployment"
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 480
     demo_login_code: str = "Passw0rd!"
->>>>>>> b848cc5305abb5d3cc9a479c031638968726323c
 
     class Config:
         env_file = ".env"

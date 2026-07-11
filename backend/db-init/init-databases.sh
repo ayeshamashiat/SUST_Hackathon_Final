@@ -1,4 +1,4 @@
-#!/bin/bash
+﻿#!/bin/bash
 set -euo pipefail
 
 # Creates five logically separate databases (bkash_db, nagad_db, rocket_db,
