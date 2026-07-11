@@ -1044,3 +1044,66 @@ redirect), `frontend/src/app/layout.tsx` (nav extracted to `NavLinks`),
 `frontend/src/lib/api.ts` (`getAlerts` gained a `limit` param, default
 raised to 300 for fleet-wide dashboards).
 
+---
+
+### 2026-07-12 — Phase 2: explainability layer (AI summary, risk breakdown, ranked recommendations)
+
+**Prompt**: "do phase 2" - confirming the second item from the 7-phase
+enterprise-dashboard breakdown proposed last turn.
+
+**Summary**: Built three rule-based explainability pieces and wired them
+into the existing `AlertCaseCard` (used by all 5 dashboards) plus a
+page-level summary panel on every dashboard:
+
+- **Risk-contribution breakdown** (`lib/riskContribution.ts`) - decomposes
+  each alert's `evidence` (already returned by the backend) into named
+  factors with point weights (e.g. "Rapid cash-out activity vs. baseline
+  +32", "Concentrated in a small group of accounts +24"), summed into a
+  0-100 score. Explicitly documented and labeled in the UI as hand-authored
+  explainability weights, not a trained model's feature importance -
+  deliberately not presented as calibrated statistics.
+- **Ranked recommendation engine** (`lib/recommendations.ts`) - expands the
+  backend's single `recommended_action` into an ordered action list per
+  (alert type, current owner), so the same liquidity case shows different
+  ranked actions depending on whether Field Officer, Provider Ops, or
+  Management currently owns it. Scores are labeled "priority", not
+  "confidence" - a ranking weight for ordering, not a probability claim.
+- **AI Summary panel** (`lib/aiSummary.ts` + `components/AiSummaryPanel.tsx`)
+  - a fixed-template paragraph per dashboard summarizing open-case count,
+  severity, dominant alert type/provider, and the single most urgent case.
+  Deliberately template-based, not a live LLM call (Phase 8/`services/
+  llm.py` isn't built yet, and this project's standing rule is mock-mode-
+  by-default without an explicit go-ahead) - every instance carries a
+  visible "not a live model call" caption so it's never mistaken for a real
+  generative summary. Considered including a "similar past patterns"
+  sentence like the brief's own example, but Phase 5 (historical
+  comparison) doesn't exist yet, so left it out rather than assert
+  something unverifiable.
+
+Also added a distinct "Confidence reduced" callout in `AlertCaseCard` when
+an alert's confidence is LOW, surfacing the existing `confidence_note` as a
+labeled reason rather than leaving it blended into the evidence footer.
+
+**A judgment call worth flagging**: the spec's own example showed numeric
+confidence percentages ("93%", "42%"). Deliberately did NOT fabricate
+those - the backend only ever computes a genuine 3-level HIGH/MEDIUM/LOW
+confidence (see `services/confidence.py` from an earlier phase), and
+inventing a fake decimal-precision percentage from that would be less
+honest, not more, given the brief's own "never hide uncertainty" /
+responsible-AI framing. Kept the qualitative badge and reason text instead
+of adding false precision.
+
+**Verified**: clean `tsc --noEmit`, clean `next lint` (same pre-existing,
+unrelated `auth.tsx` error as prior phases), all 7 routes still return 200
+with zero new server errors after the change (checked by curling the
+user's already-running dev server directly). Same browser-verification gap
+as the last two phases - no Chrome connection available this session.
+
+**Files added**: `frontend/src/lib/{riskContribution,recommendations,
+aiSummary}.ts`, `frontend/src/components/{AiSummaryPanel,
+RiskContributionBar,RecommendationList}.tsx`.
+**Files modified**: `frontend/src/components/AlertCaseCard.tsx` (wired in
+risk breakdown, ranked recommendations, confidence-reduced callout),
+`frontend/src/app/{agent,field-officer,operations,risk,management,
+alerts}/page.tsx` (AI Summary panel added to each).
+

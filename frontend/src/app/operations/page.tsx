@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { AiSummaryPanel } from "@/components/AiSummaryPanel";
 import { AlertCaseCard } from "@/components/AlertCaseCard";
 import { CaseStatusBadge } from "@/components/Badges";
 import { KpiCard } from "@/components/KpiCard";
 import { api } from "@/lib/api";
+import { summarizeQueue } from "@/lib/aiSummary";
 import { useAuth } from "@/lib/auth";
 import { average, formatMinutes, isResolvedOrClosed, resolutionRate, timeToResolveMinutes } from "@/lib/caseMetrics";
 import { formatRelative } from "@/lib/format";
@@ -80,6 +82,8 @@ export default function OperationsDashboard() {
           alerts, and assign or reassign cases along the escalation ladder.
         </p>
       </div>
+
+      <AiSummaryPanel text={summarizeQueue(alerts, providerLabel)} />
 
       {error && (
         <div className="rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm text-rose-700">

@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AiSummaryPanel } from "@/components/AiSummaryPanel";
 import { AlertCaseCard } from "@/components/AlertCaseCard";
 import { SeverityBadge } from "@/components/Badges";
 import { KpiCard } from "@/components/KpiCard";
+import { summarizeQueue } from "@/lib/aiSummary";
 import { average, formatMinutes, timeToAcknowledgeMinutes } from "@/lib/caseMetrics";
 import { api } from "@/lib/api";
 import { AGENTS } from "@/lib/agents";
@@ -78,6 +80,8 @@ export default function FieldOfficerDashboard() {
           to Provider Operations when you can&apos;t resolve it yourself.
         </p>
       </div>
+
+      <AiSummaryPanel text={summarizeQueue(alerts, "the fleet")} />
 
       {error && (
         <div className="rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm text-rose-700">

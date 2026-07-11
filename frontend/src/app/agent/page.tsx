@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AiSummaryPanel } from "@/components/AiSummaryPanel";
 import { AlertCaseCard } from "@/components/AlertCaseCard";
 import { BalanceCard } from "@/components/BalanceCard";
 import { ConfidenceBadge } from "@/components/Badges";
 import { api } from "@/lib/api";
+import { summarizeQueue } from "@/lib/aiSummary";
 import { useAuth } from "@/lib/auth";
 import { PROVIDER_COLOR, PROVIDER_LABEL, type ProviderId } from "@/lib/agents";
 import type { AgentAggregateOut, AlertOut, ForecastOut } from "@/lib/types";
@@ -66,6 +68,8 @@ export default function AgentDashboard() {
           authoritative provider balance, and nothing here merges provider funds.
         </p>
       </div>
+
+      <AiSummaryPanel text={summarizeQueue(cases, "your outlet")} />
 
       {error && (
         <div className="rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm text-rose-700">

@@ -2,9 +2,11 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { AgentSelector } from "@/components/AgentSelector";
+import { AiSummaryPanel } from "@/components/AiSummaryPanel";
 import { AlertCaseCard } from "@/components/AlertCaseCard";
 import { HistoricalOutlierCard, VelocityAnomalyCard } from "@/components/AnomalyCard";
 import { api } from "@/lib/api";
+import { summarizeQueue } from "@/lib/aiSummary";
 import { useAuth } from "@/lib/auth";
 import { AGENTS, PROVIDERS, type ProviderId } from "@/lib/agents";
 import type { AlertOut, AmountOutlierOut, AnomalyOut } from "@/lib/types";
@@ -72,6 +74,8 @@ function CoordinationSection() {
           decide.
         </p>
       </div>
+
+      <AiSummaryPanel text={summarizeQueue(alerts, "this queue")} />
 
       {error && (
         <div className="rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm text-rose-700">

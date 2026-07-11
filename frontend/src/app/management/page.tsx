@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { AiSummaryPanel } from "@/components/AiSummaryPanel";
 import { AlertCaseCard } from "@/components/AlertCaseCard";
 import { KpiCard } from "@/components/KpiCard";
 import { api } from "@/lib/api";
+import { summarizeQueue } from "@/lib/aiSummary";
 import { average, formatMinutes, isResolvedOrClosed, resolutionRate, timeToResolveMinutes } from "@/lib/caseMetrics";
 import { AGENTS, PROVIDER_LABEL, type ProviderId } from "@/lib/agents";
 import type { AlertOut, Severity } from "@/lib/types";
@@ -97,6 +99,8 @@ export default function ManagementDashboard() {
           Compliance, not managed from here.
         </p>
       </div>
+
+      <AiSummaryPanel text={summarizeQueue(alerts, "the fleet")} />
 
       {error && (
         <div className="rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm text-rose-700">

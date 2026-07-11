@@ -2,9 +2,13 @@
 
 import { Fragment, useState } from "react";
 import { CaseStatusBadge, ConfidenceBadge, OwnerBadge, SeverityBadge } from "@/components/Badges";
+import { RecommendationList } from "@/components/RecommendationList";
+import { RiskContributionBar } from "@/components/RiskContributionBar";
 import { api } from "@/lib/api";
 import { formatBDT, formatRelative } from "@/lib/format";
 import { PROVIDER_LABEL, type ProviderId } from "@/lib/agents";
+import { rankedRecommendations } from "@/lib/recommendations";
+import { riskContribution } from "@/lib/riskContribution";
 import type { AlertOut } from "@/lib/types";
 import { useAuth } from "@/lib/auth";
 
@@ -45,6 +49,8 @@ export function AlertCaseCard({ alert, onChanged }: { alert: AlertOut; onChanged
 
   const actable = canAct(user, alert);
   const isClosed = alert.current_status === "CLOSED";
+  const { factors: riskFactors, total: riskTotal } = riskContribution(alert);
+  const recommendations = rankedRecommendations(alert);
 
   async function run(action: string, fn: () => Promise<AlertOut>) {
     setBusy(action);
@@ -101,10 +107,19 @@ export function AlertCaseCard({ alert, onChanged }: { alert: AlertOut; onChanged
             <p className="text-slate-800">{messageFor(alert, lang)}</p>
           </div>
 
+          {alert.confidence === "LOW" && (
+            <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
+              <div className="text-xs uppercase tracking-wide text-amber-800 mb-1">Confidence reduced</div>
+              <div className="text-amber-900">{alert.confidence_note}</div>
+            </div>
+          )}
+
           <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2">
             <div className="text-xs uppercase tracking-wide text-slate-500 mb-1">Recommended next step</div>
             <div className="text-slate-800">{alert.recommended_action}</div>
           </div>
+
+          <RecommendationList actions={recommendations} />
 
           <div>
             <div className="text-xs uppercase tracking-wide text-slate-500 mb-1.5">Evidence</div>
@@ -120,6 +135,8 @@ export function AlertCaseCard({ alert, onChanged }: { alert: AlertOut; onChanged
             </dl>
             <div className="text-xs text-slate-500 mt-1.5">{alert.confidence_note}</div>
           </div>
+
+          <RiskContributionBar factors={riskFactors} total={riskTotal} />
 
           {actable && !isClosed && (
             <div className="rounded-lg border border-emerald-200 bg-emerald-50/50 px-3 py-3 space-y-2">

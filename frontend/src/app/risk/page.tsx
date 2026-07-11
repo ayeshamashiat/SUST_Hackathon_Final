@@ -1,9 +1,11 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { AiSummaryPanel } from "@/components/AiSummaryPanel";
 import { AlertCaseCard } from "@/components/AlertCaseCard";
 import { KpiCard } from "@/components/KpiCard";
 import { api } from "@/lib/api";
+import { summarizeQueue } from "@/lib/aiSummary";
 import { average } from "@/lib/caseMetrics";
 import type { AlertOut } from "@/lib/types";
 
@@ -60,6 +62,8 @@ export default function RiskDashboard() {
         Every flagged item below is language-guarded as <strong>&ldquo;requires human review&rdquo;</strong> or
         <strong> &ldquo;unusual activity&rdquo;</strong> - never labeled as confirmed fraud.
       </div>
+
+      <AiSummaryPanel text={summarizeQueue(reviewCases, "Risk / Compliance review")} />
 
       {error && (
         <div className="rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm text-rose-700">
