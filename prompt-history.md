@@ -966,3 +966,81 @@ shared constants instead of duplicating), `backend/aggregator-api/app/
 {config,db,main,schemas}.py`, `frontend/src/lib/{types,api}.ts`,
 `frontend/src/components/Badges.tsx`, `frontend/src/app/alerts/page.tsx`.
 
+---
+
+### 2026-07-12 — Stakeholder-specific dashboards (Phase 1 of a much larger enterprise-UX ask)
+
+**Prompt**: Restated the Field Officer / Provider Operations / Risk-
+Compliance / Management responsibility lists and asked that the stakeholder
+dashboards contain all of them, then attached a very large "enterprise-
+grade decision-support dashboard" spec (ServiceNow/PagerDuty/Sentinel-style
+UI; an AI Summary panel on every page; explainable risk-contribution score
+breakdowns; historical baseline comparison; a non-destructive what-if
+simulator; nearby-outlet discovery; area heatmaps; recurring-pattern
+detection; similar-historical-case lookup; resolution analytics; and five
+fully-featured, role-specific dashboards).
+
+**Summary**: This is a full product redesign, not an incremental change -
+today there was one generic dashboard page shared by every role. Rather
+than attempt the entire spec at once, proposed a 7-phase breakdown (role
+dashboards → explainability layer → timeline/resolution analytics →
+what-if simulation → historical comparison/pattern detection → area
+intelligence/nearby-outlet/similar-case search → enterprise visual pass)
+and asked the user to confirm scope before writing code. Confirmed: Phase 1
+only (stakeholder dashboards) for this turn.
+
+Built five role-specific dashboard routes, all reusing data that already
+existed (no new backend endpoints this phase - resolution-time/escalation-
+count/resolution-rate metrics are computed client-side in the new
+`lib/caseMetrics.ts` from each alert's own `audit_trail`, which already
+carries every timestamp needed):
+
+- `/agent` - the existing balance-card view, plus a "Your cases" section
+  (backend already scopes an AGENT login's `/alerts` to their own agent).
+- `/field-officer` - KPI row, an "assigned agents" priority-ranked table
+  (grouped client-side by `agent_id`), and their own verification queue via
+  the existing `AlertCaseCard`.
+- `/operations` - the most feature-rich, per the brief: live incident
+  queue, an escalation-activity table (both directions - escalated by them
+  or reassigned to them), and resolution-time KPIs, all provider-scoped by
+  the backend automatically.
+- `/risk` - anomaly/data-quality-focused review queue (liquidity cases
+  optionally included), reinforcing "requires human review" language
+  rather than any fraud label.
+- `/management` - executive KPIs, an area-performance table (joined
+  client-side against `lib/agents.ts`'s existing per-agent `area` field, no
+  backend change needed), a provider-comparison table, and a simple
+  alert-volume-by-day view. Read-only by design per the brief ("Management
+  should not manage individual incidents") - the only actionable list is
+  cases that actually reached Management at the top of the escalation
+  ladder.
+
+`/` now redirects each role to its dashboard instead of showing one
+generic view; the top nav is now role-aware (`NavLinks.tsx`, a new small
+client component - `layout.tsx` itself stays a server component). Also
+deduplicated `ROLE_LABEL` (was hand-copied in `UserBadge.tsx`; now imported
+from `Badges.tsx`, which already had an identical copy from last phase).
+
+**Verified**: clean `tsc --noEmit`; clean `next lint` (only the same
+pre-existing, unrelated `auth.tsx` error from before, not something this
+turn touched); fixed two React Compiler "could not preserve memoization"
+errors it caught in `field-officer` and `management` (a `useMemo` depending
+on a freshly-filtered array literal each render, rather than the actual
+`alerts` state - removed the unnecessary `useMemo` in both spots since the
+lists involved are small); confirmed all 7 routes (`/`, `/agent`,
+`/field-officer`, `/operations`, `/risk`, `/management`, `/alerts`) return
+200 with zero new server-side errors logged, by curling each directly
+against the user's already-running dev server. Same as last phase, could
+not do a real visual/click-through check - Chrome extension unavailable,
+and Next.js's single-instance-per-directory lock blocks a second dev server
+for the preview tools to attach to.
+
+**Files added**: `frontend/src/components/{KpiCard,NavLinks}.tsx`,
+`frontend/src/lib/caseMetrics.ts`, `frontend/src/app/{agent,field-officer,
+operations,risk,management}/page.tsx`.
+**Files modified**: `frontend/src/app/page.tsx` (now a role-based
+redirect), `frontend/src/app/layout.tsx` (nav extracted to `NavLinks`),
+`frontend/src/components/UserBadge.tsx` (dedupe `ROLE_LABEL`),
+`frontend/src/lib/api.ts` (`getAlerts` gained a `limit` param, default
+raised to 300 for fleet-wide dashboards).
+

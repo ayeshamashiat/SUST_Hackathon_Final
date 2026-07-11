@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
-import Link from "next/link";
 import { AuthGate } from "@/components/AuthGate";
+import { NavLinks } from "@/components/NavLinks";
 import { UserBadge } from "@/components/UserBadge";
 import { AuthProvider } from "@/lib/auth";
 import "./globals.css";
@@ -39,12 +39,7 @@ export default function RootLayout({
                 </span>
               </div>
               <nav className="flex items-center gap-4 text-sm">
-                <Link href="/" className="hover:text-emerald-700 transition-colors">
-                  Dashboard
-                </Link>
-                <Link href="/alerts" className="hover:text-emerald-700 transition-colors">
-                  Anomaly Review
-                </Link>
+                <NavLinks />
                 <UserBadge />
               </nav>
             </div>

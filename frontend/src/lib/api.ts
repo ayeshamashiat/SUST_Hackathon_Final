@@ -56,13 +56,13 @@ export const api = {
     return request<AmountOutlierOut[]>(`/aggregate/anomaly/${agentId}/historical?${search.toString()}`);
   },
 
-  getAlerts: (filters: { agentId?: string; provider?: string; status?: CaseStatus } = {}) => {
+  getAlerts: (filters: { agentId?: string; provider?: string; status?: CaseStatus; limit?: number } = {}) => {
     const search = new URLSearchParams();
     if (filters.agentId) search.set("agent_id", filters.agentId);
     if (filters.provider) search.set("provider", filters.provider);
     if (filters.status) search.set("status", filters.status);
-    const qs = search.toString();
-    return request<AlertOut[]>(`/alerts${qs ? `?${qs}` : ""}`);
+    search.set("limit", String(filters.limit ?? 300));
+    return request<AlertOut[]>(`/alerts?${search.toString()}`);
   },
   getAlert: (alertId: number) => request<AlertOut>(`/alerts/${alertId}`),
   acknowledgeAlert: (alertId: number, note?: string) =>

@@ -1,16 +1,7 @@
 "use client";
 
+import { ROLE_LABEL } from "@/components/Badges";
 import { useAuth } from "@/lib/auth";
-import type { UserRole } from "@/lib/types";
-
-const ROLE_LABEL: Record<UserRole, string> = {
-  AGENT: "Agent",
-  FIELD_OFFICER: "Field Officer",
-  AREA_MANAGER: "Area Manager",
-  PROVIDER_OPS: "Provider Operations",
-  RISK_COMPLIANCE: "Risk & Compliance",
-  MANAGEMENT: "Management",
-};
 
 export function UserBadge() {
   const { user, logout } = useAuth();
