@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -6,6 +7,8 @@ from app.db import init_db
 from app.routers import bkash, nagad, rocket, simulator
 from app.seed import seed_all
 from app.simulator import engine as sim_engine
+
+logging.basicConfig(level=logging.INFO)
 
 
 @asynccontextmanager

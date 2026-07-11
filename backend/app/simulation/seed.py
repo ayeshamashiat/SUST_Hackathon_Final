@@ -88,9 +88,10 @@ def seed_users(session: Session) -> None:
 
 
 def reset(session: Session) -> None:
-    from app.models.models import Alert, Case, CaseEvent, Transaction
+    from app.models.models import Alert, AlertEvent, Case, CaseEvent, Transaction
 
     for model in (
+        AlertEvent,
         CaseEvent,
         Case,
         Alert,

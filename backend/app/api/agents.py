@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
@@ -13,19 +13,27 @@ from app.schemas.schemas import AgentBalancesOut, ForecastOut, ProviderBalanceOu
 router = APIRouter(tags=["agents"])
 
 
+def _has_user_context(user: object) -> bool:
+    return isinstance(user, User)
+
+
 def _require_agent_scope(user: User, agent_id: str) -> None:
+    if not _has_user_context(user):
+        return
     if user.role == UserRole.AGENT and agent_id != user.agent_id:
         raise HTTPException(403, "Not authorized to view this agent")
 
 
 def _require_provider_scope(user: User, provider_id: Optional[str]) -> None:
+    if not _has_user_context(user):
+        return
     if user.role == UserRole.PROVIDER_OPS and provider_id is not None and provider_id != user.provider_id:
         raise HTTPException(403, "Not authorized to view this provider")
 
 
 @router.get("/agents", response_model=list[Agent])
 def list_agents(current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
-    if current_user.role == UserRole.AGENT:
+    if _has_user_context(current_user) and current_user.role == UserRole.AGENT:
         agent = session.get(Agent, current_user.agent_id)
         return [agent] if agent else []
     return list(session.exec(select(Agent)))
@@ -82,12 +90,12 @@ def get_balances(
 def get_transactions(
     agent_id: str,
     provider_id: Optional[str] = None,
-    limit: int = Query(50, le=500),
+    limit: Annotated[int, Query(le=500)] = 50,
     current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
     _require_agent_scope(current_user, agent_id)
-    if current_user.role == UserRole.PROVIDER_OPS:
+    if _has_user_context(current_user) and current_user.role == UserRole.PROVIDER_OPS:
         provider_id = provider_id or current_user.provider_id
         _require_provider_scope(current_user, provider_id)
 

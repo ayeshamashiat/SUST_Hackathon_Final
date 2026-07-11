@@ -14,6 +14,10 @@ JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "dev-insecure-secret-change-me
 JWT_ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 480
 
+# Narratives are deterministic templates by default.  Live model access is
+# deliberately disabled until a maintainer explicitly enables and configures it.
+LLM_MODE = "mock"
+
 # --- Simulation ---
 TICK_SECONDS = 4.0
 CASH_SAFETY_THRESHOLD = 5_000.0

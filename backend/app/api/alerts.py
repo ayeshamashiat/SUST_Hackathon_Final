@@ -5,8 +5,10 @@ from sqlmodel import Session, select
 
 from app.core.database import get_session
 from app.core.deps import get_current_user
-from app.models.models import Agent, Alert, AlertCategory, Case, CaseEvent, Provider, User, UserRole
-from app.schemas.schemas import AlertOut, CaseEventOut, CaseOut
+from app.alerts.routing import get_routing
+from app.cases.workflow import InvalidTransitionError, apply_update
+from app.models.models import Agent, Alert, AlertCategory, AlertEvent, Case, CaseEvent, CaseStatus, Provider, User, UserRole
+from app.schemas.schemas import AlertActionIn, AlertEventOut, AlertOut, CaseEventOut, CaseOut
 
 router = APIRouter(tags=["alerts"])
 
@@ -56,6 +58,92 @@ def get_alert(
     return _to_alert_out(session, alert)
 
 
+@router.post("/alerts/{alert_id}/acknowledge", response_model=AlertOut)
+def acknowledge_alert(
+    alert_id: int,
+    body: AlertActionIn,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    _require_action_scope(current_user, session, alert_id)
+    return _apply_alert_action(session, alert_id, CaseStatus.ACKNOWLEDGED, "ACKNOWLEDGED", body)
+
+
+@router.post("/alerts/{alert_id}/escalate", response_model=AlertOut)
+def escalate_alert(
+    alert_id: int,
+    body: AlertActionIn,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    _require_action_scope(current_user, session, alert_id)
+    return _apply_alert_action(session, alert_id, CaseStatus.ESCALATED, "ESCALATED", body)
+
+
+@router.post("/alerts/{alert_id}/resolve", response_model=AlertOut)
+def resolve_alert(
+    alert_id: int,
+    body: AlertActionIn,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    _require_action_scope(current_user, session, alert_id)
+    return _apply_alert_action(session, alert_id, CaseStatus.RESOLVED, "RESOLVED", body)
+
+
+def _require_action_scope(user: User, session: Session, alert_id: int) -> None:
+    alert = session.get(Alert, alert_id)
+    if not alert:
+        raise HTTPException(404, "Alert not found")
+    if not _in_scope(user, alert):
+        raise HTTPException(403, "Not authorized to update this alert")
+
+
+def _apply_alert_action(
+    session: Session, alert_id: int, status: CaseStatus, event_type: str, body: AlertActionIn
+) -> AlertOut:
+    alert = session.get(Alert, alert_id)
+    if not alert:
+        raise HTTPException(404, "Alert not found")
+    case = session.exec(select(Case).where(Case.alert_id == alert.id)).one_or_none()
+    if not case:
+        raise HTTPException(409, "Alert has no coordination case")
+
+    owner_role = _owner_role_for(session, alert)
+    if status == CaseStatus.ESCALATED:
+        # A direct escalation is allowed at the alert API boundary, while the
+        # case state machine remains strict and auditable.
+        if case.status == CaseStatus.NEW:
+            apply_update(session, case, CaseStatus.ACKNOWLEDGED, "Automatically acknowledged before escalation.", body.actor)
+        case.stakeholder_role = "Risk Analyst"
+        case.owner = "Risk Analyst (on duty)"
+        owner_role = "risk_analyst"
+        session.add(case)
+        session.commit()
+
+    try:
+        apply_update(session, case, status, body.note, body.actor)
+    except InvalidTransitionError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    session.add(
+        AlertEvent(
+            alert_id=alert.id,
+            event_type=event_type,
+            actor=body.actor,
+            note=body.note,
+            owner_role=owner_role,
+        )
+    )
+    session.commit()
+    return _to_alert_out(session, alert)
+
+
+def _owner_role_for(session: Session, alert: Alert) -> str:
+    provider = session.get(Provider, alert.provider_id) if alert.provider_id else None
+    return get_routing(alert.category, alert.provider_id, provider.name if provider else None)["owner_role"]
+
+
 def _to_alert_out(session: Session, alert: Alert) -> AlertOut:
     agent = session.get(Agent, alert.agent_id)
     provider = session.get(Provider, alert.provider_id) if alert.provider_id else None
@@ -66,6 +154,7 @@ def _to_alert_out(session: Session, alert: Alert) -> AlertOut:
         events = list(
             session.exec(select(CaseEvent).where(CaseEvent.case_id == case.id).order_by(CaseEvent.created_at))
         )
+
         case_out = CaseOut(
             id=case.id,
             alert_id=case.alert_id,
@@ -81,6 +170,10 @@ def _to_alert_out(session: Session, alert: Alert) -> AlertOut:
             ],
         )
 
+    alert_events = list(
+        session.exec(select(AlertEvent).where(AlertEvent.alert_id == alert.id).order_by(AlertEvent.created_at))
+    )
+
     return AlertOut(
         id=alert.id,
         category=alert.category.value,
@@ -93,10 +186,22 @@ def _to_alert_out(session: Session, alert: Alert) -> AlertOut:
         title=alert.title,
         message_en=alert.message_en,
         message_bn=alert.message_bn,
+        message_banglish=alert.message_banglish,
         evidence=alert.evidence,
         confidence=alert.confidence,
         confidence_note=alert.confidence_note,
         data_quality=alert.data_quality,
         created_at=alert.created_at,
         case=case_out,
+        events=[
+            AlertEventOut(
+                id=event.id,
+                event_type=event.event_type,
+                actor=event.actor,
+                note=event.note,
+                owner_role=event.owner_role,
+                created_at=event.created_at,
+            )
+            for event in alert_events
+        ],
     )

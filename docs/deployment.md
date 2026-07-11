@@ -89,6 +89,10 @@ guarantees rather than conventions - see the boundary checks below.
 docker compose exec postgres psql -U bkash_service -d nagad_db -c "SELECT 1;"
 # -> permission denied for database "nagad_db"
 
+# The aggregator/API path remains provider-scoped in the application layer
+curl http://localhost:8000/metrics
+# -> returns per-provider health plus validation metrics derived from the shared simulation state
+
 # sync_service is read-only against provider DBs
 docker compose exec postgres psql -U sync_service -d bkash_db -c "UPDATE balances SET emoney_balance = 0;"
 # -> permission denied for table balances

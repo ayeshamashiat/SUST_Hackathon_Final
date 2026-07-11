@@ -10,6 +10,7 @@ row, so this order is a deliberate severity ranking, not an accident of
 which check happens to run last.
 """
 
+import logging
 from datetime import datetime
 from typing import Optional
 
@@ -21,6 +22,8 @@ from app.models import ProviderBalance, SyncState, SyncStatus, TransactionProjec
 from app.provider_models import Balance as ProviderBalanceRow
 from app.provider_models import Transaction as ProviderTransactionRow
 from app.provider_models import TransactionType
+
+logger = logging.getLogger("sync-service")
 
 RECONCILE_EPSILON = 0.01  # float rounding tolerance, not a business threshold
 
@@ -166,8 +169,16 @@ def sync_provider(provider: str, now: Optional[datetime] = None) -> None:
 
 
 def sync_all(now: Optional[datetime] = None) -> None:
+    now = now or datetime.utcnow()
     for provider in PROVIDER_ENGINES:
-        sync_provider(provider, now=now)
+        # One provider's unexpected failure (outside the already-handled
+        # "provider poll failed" case inside sync_provider - this is for
+        # anything that goes wrong afterward, e.g. writing to shared_db)
+        # must not skip the remaining providers in this same cycle.
+        try:
+            sync_provider(provider, now=now)
+        except Exception:
+            logger.exception(f"sync_provider({provider!r}) raised unexpectedly")
 
 
 def get_status() -> dict:

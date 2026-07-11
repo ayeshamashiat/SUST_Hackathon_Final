@@ -51,6 +51,15 @@ class CaseEventOut(BaseModel):
     created_at: UTCDateTime
 
 
+class AlertEventOut(BaseModel):
+    id: int
+    event_type: str
+    actor: str
+    note: Optional[str]
+    owner_role: Optional[str]
+    created_at: UTCDateTime
+
+
 class CaseOut(BaseModel):
     id: int
     alert_id: int
@@ -75,16 +84,23 @@ class AlertOut(BaseModel):
     title: str
     message_en: str
     message_bn: str
+    message_banglish: str
     evidence: dict
     confidence: ConfidenceLevel
     confidence_note: str
     data_quality: DataQuality
     created_at: UTCDateTime
     case: Optional[CaseOut] = None
+    events: list[AlertEventOut] = []
 
 
 class CaseUpdateIn(BaseModel):
     status: Optional[CaseStatus] = None
+    note: Optional[str] = None
+
+
+class AlertActionIn(BaseModel):
+    actor: str = "operations_user"
     note: Optional[str] = None
 
 
@@ -109,3 +125,18 @@ class TokenOut(BaseModel):
     display_name: str
     agent_id: Optional[str] = None
     provider_id: Optional[str] = None
+
+
+class ScenarioIn(BaseModel):
+    provider: str
+    demand_multiplier: float = 1.0
+    duration_minutes: int = 30
+    transaction_rate: float = 2.0
+    cash_out_ratio: float = 0.7
+
+
+class AggregateForecastOut(BaseModel):
+    agent_id: str
+    agent_name: str
+    area: str
+    forecasts: list[ForecastOut]
