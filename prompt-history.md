@@ -721,3 +721,83 @@ themselves (external account, not something achievable from this session).
 **Files added**: `sonarqube/docker-compose.yml`, `sonar-project.properties`,
 `.github/workflows/sonarcloud.yml`, `docs/sonarqube.md`.
 
+---
+
+### 2026-07-11 — Bulk historical data + per-agent historical anomaly baseline
+
+**Prompt**: Need a huge amount of historical data across all databases, and
+the data should be able to tell whether a given transaction type is
+suspicious for a *specific* agent, based on that agent's own history. Asked
+where to generate it from.
+
+**Summary**: Explained the real gap first: historical data has to originate
+in the provider databases (never `shared_db`/aggregator-api, which are
+read-only projections), and separately, simply having more history in the
+database wouldn't make detection any smarter - the existing anomaly detector
+(Phase 5) only ever looks at a 60-minute rolling window, so "is this unusual
+for this agent's history" needed a genuinely new, additive detector, not
+just more data.
+
+Built `provider-api/app/historical_seed.py` - an on-demand (not automatic-
+on-startup) bulk generator with realistic weekday/weekend and time-of-day
+shaping (Bangladesh Fri/Sat weekend runs busier; volume weighted toward
+business hours, not uniform-random). Idempotent per agent+provider: only
+backfills the gap older than the requested window, and extends the existing
+running balance by the prequel's own net effect rather than recomputing
+from scratch, so it never duplicates or corrupts data already seeded by the
+quick-seed or live simulator. Ran it for 90 days: ~146,000 transactions
+created across the three provider databases (48,907 / 49,137 / 47,834).
+
+Added `services/anomaly.detect_amount_outlier` in aggregator-api - a new,
+separate detector from the existing velocity/clustering one: evaluates an
+agent's single most recent transaction against that specific agent's own
+historical mean/stdev (default 30-day lookback, minimum 20 prior samples
+before trusting the statistic), flagging when it's a statistical outlier
+for *that agent specifically* - not a fleet-wide or generic amount
+threshold. Exposed as a new endpoint, `GET /aggregate/anomaly/{agent_id}
+/historical`. Same careful-language rule as the existing detector: "unusual
+for this agent," "should be reviewed," "not a fraud determination."
+
+**Found and fixed a real reliability bug while verifying at this volume**:
+syncing the ~146k-row backlog, sync-service's background loop died silently
+- an exception during a large sync cycle (most likely a stale pooled
+connection from when `docker compose up --build` had incidentally recreated
+the postgres container) propagated out of `sync_all()` uncaught, permanently
+ending the asyncio loop with nothing printed to the logs to explain why.
+Confirmed the underlying sync logic itself was fine (running `sync_provider`
+manually completed correctly, just took time for a 45k-row batch) - the bug
+was purely in error handling. Fixed at two layers: `sync_all()` now catches
+per-provider so one provider's failure doesn't skip the others in the same
+cycle, and `main.py`'s `_loop()` now catches per-cycle so a single bad cycle
+can never end the background task, logging the exception instead of
+swallowing it silently. Applied the identical fix to provider-api's
+simulator loop as the same class of risk, proactively, before it caused the
+same silent failure there.
+
+**Verified end-to-end**: confirmed the "not enough data" path correctly
+declines to judge before backfilling; ran the 90-day backfill; watched
+sync-service correctly catch up all three providers with zero failures
+after the fix (previously stuck indefinitely on two of three providers);
+queried a real agent's historical baseline (719 prior transactions, mean
+2,643 BDT); injected one 45,000 BDT transaction for that same agent and
+confirmed it was flagged HIGH confidence with z=31.0 against their own
+history, citing the specific transaction id and their real historical
+average; confirmed response latency stayed well under 250ms across all
+`/aggregate/*` endpoints at the new ~146k-row data volume.
+
+**Documented limitation**: the outlier detector uses a simple mean/stdev,
+so one injected outlier inflates its own future baseline's standard
+deviation once enough time passes for it to enter the historical window -
+a median/MAD-based approach would be more robust to this but wasn't built
+given time constraints; noted here rather than silently left unstated.
+
+**Files added**: `backend/provider-api/app/historical_seed.py`.
+**Files modified**: `backend/aggregator-api/app/config.py` (new tuning
+constants), `backend/aggregator-api/app/services/anomaly.py`
+(`detect_amount_outlier` + `AmountOutlierResult`), `backend/aggregator-api/
+app/schemas.py` (`AmountOutlierOut`), `backend/aggregator-api/app/routers/
+aggregate.py` (new `/aggregate/anomaly/{agent_id}/historical` endpoint),
+`backend/sync-service/app/main.py` + `sync.py` (background-loop reliability
+fix), `backend/provider-api/app/main.py` + `simulator/engine.py` (same fix
+applied proactively).
+

@@ -5,6 +5,7 @@ or any other provider's data, matching Phase 3's scope (Provider API only).
 """
 
 import asyncio
+import logging
 import random
 from datetime import datetime, timedelta
 from typing import Optional
@@ -176,7 +177,15 @@ def tick(now: Optional[datetime] = None) -> None:
 
 async def _loop() -> None:
     while state.running:
-        await asyncio.to_thread(tick)
+        try:
+            await asyncio.to_thread(tick)
+        except Exception:
+            # A single bad tick must never permanently kill the background
+            # loop - found this exact failure mode in sync-service's loop
+            # (an uncaught exception silently stopped it forever with
+            # nothing in the logs); applying the same guard here as cheap
+            # insurance against the identical pattern.
+            logging.getLogger("provider-api.simulator").exception("tick() raised - will retry next interval")
         await asyncio.sleep(TICK_SECONDS)
 
 

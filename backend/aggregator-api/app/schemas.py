@@ -55,3 +55,24 @@ class AnomalyOut(BaseModel):
     window_end: Optional[datetime]
     confidence: ConfidenceLevel
     message: str
+
+
+class AmountOutlierOut(BaseModel):
+    """Is this agent's most recent transaction unusual for THIS agent
+    specifically, given their own historical pattern - distinct from
+    AnomalyOut above, which looks at burst frequency/clustering, not a
+    single transaction's amount against one agent's history."""
+
+    agent_id: str
+    provider: str
+    transaction_type: str
+    flagged: bool
+    evaluated_transaction_id: Optional[int]
+    evaluated_amount: Optional[float]
+    evaluated_at: Optional[datetime]
+    historical_sample_size: int
+    historical_mean: Optional[float]
+    historical_stdev: Optional[float]
+    z_score: Optional[float]
+    confidence: ConfidenceLevel
+    message: str

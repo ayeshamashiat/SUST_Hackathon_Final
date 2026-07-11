@@ -37,6 +37,9 @@ from app.config import (
     ANOMALY_MIN_WINDOW_COUNT,
     ANOMALY_WINDOW_MINUTES,
     ANOMALY_Z_THRESHOLD,
+    HISTORICAL_LOOKBACK_DAYS,
+    HISTORICAL_MIN_SAMPLES,
+    HISTORICAL_Z_THRESHOLD,
 )
 from app.models import TransactionProjection
 from app.services.confidence import ConfidenceLevel
@@ -193,4 +196,125 @@ def _build_message(
         f"({z_part} vs. this agent's baseline), concentrated in only {concentration_part}{amount_part}. "
         "This may be normal demand or a data artifact, but it should be reviewed before approving a large "
         "cash replenishment. This is not a fraud determination."
+    )
+
+
+@dataclass
+class AmountOutlierResult:
+    """Answers a different question than AnomalyResult above: not 'is there
+    a burst of activity' but 'is this agent's most recent transaction an
+    unusual AMOUNT for what this specific agent normally does' - evaluated
+    against that one agent's own historical distribution, not a fleet-wide
+    or generic threshold. Requires HISTORICAL_LOOKBACK_DAYS of real history
+    to mean anything (see provider-api/app/historical_seed.py)."""
+
+    agent_id: str
+    provider: str
+    transaction_type: str
+    flagged: bool
+    evaluated_transaction_id: Optional[int]
+    evaluated_amount: Optional[float]
+    evaluated_at: Optional[datetime]
+    historical_sample_size: int
+    historical_mean: Optional[float]
+    historical_stdev: Optional[float]
+    z_score: Optional[float]
+    confidence: ConfidenceLevel = ConfidenceLevel.LOW
+    message: str = ""
+
+
+def detect_amount_outlier(
+    session: Session,
+    agent_id: str,
+    provider: str,
+    transaction_type: str = "cash_out",
+    lookback_days: float = HISTORICAL_LOOKBACK_DAYS,
+    now: Optional[datetime] = None,
+) -> AmountOutlierResult:
+    now = now or datetime.utcnow()
+    since = now - timedelta(days=lookback_days)
+
+    txs = list(
+        session.exec(
+            select(TransactionProjection)
+            .where(
+                TransactionProjection.agent_id == agent_id,
+                TransactionProjection.provider == provider,
+                TransactionProjection.type == transaction_type,
+                TransactionProjection.occurred_at >= since,
+                TransactionProjection.occurred_at <= now,
+            )
+            .order_by(TransactionProjection.occurred_at)
+        )
+    )
+
+    if len(txs) < HISTORICAL_MIN_SAMPLES + 1:
+        return AmountOutlierResult(
+            agent_id=agent_id,
+            provider=provider,
+            transaction_type=transaction_type,
+            flagged=False,
+            evaluated_transaction_id=txs[-1].provider_txn_id if txs else None,
+            evaluated_amount=txs[-1].amount if txs else None,
+            evaluated_at=txs[-1].occurred_at if txs else None,
+            historical_sample_size=max(len(txs) - 1, 0),
+            historical_mean=None,
+            historical_stdev=None,
+            z_score=None,
+            confidence=ConfidenceLevel.LOW,
+            message=(
+                f"Only {len(txs)} {transaction_type} transaction(s) in the last {lookback_days:.0f} days for this "
+                f"agent+provider - need at least {HISTORICAL_MIN_SAMPLES + 1} before 'unusual for this agent' is a "
+                "meaningful statement. Run provider-api's historical_seed to backfill more history."
+            ),
+        )
+
+    # Evaluate the most recent transaction against everything before it -
+    # "was this specific transaction unusual, given what this agent had
+    # already done up to that point" rather than including it in its own
+    # baseline.
+    *history, latest = txs
+    amounts = [t.amount for t in history]
+    hist_mean = mean(amounts)
+    hist_stdev = pstdev(amounts) if len(amounts) > 1 else 0.0
+
+    z_score = (latest.amount - hist_mean) / hist_stdev if hist_stdev > 0 else None
+    flagged = z_score is not None and z_score >= HISTORICAL_Z_THRESHOLD
+
+    if z_score is not None and z_score >= HISTORICAL_Z_THRESHOLD * 1.5:
+        confidence = ConfidenceLevel.HIGH
+    elif flagged:
+        confidence = ConfidenceLevel.MEDIUM
+    else:
+        confidence = ConfidenceLevel.MEDIUM if len(history) >= HISTORICAL_MIN_SAMPLES * 2 else ConfidenceLevel.LOW
+
+    if flagged:
+        message = (
+            f"This agent's most recent {provider} {transaction_type.replace('_', '-')} was {latest.amount:.0f} BDT, "
+            f"unusual for this specific agent - their typical {transaction_type.replace('_', '-')} over the last "
+            f"{lookback_days:.0f} days averages {hist_mean:.0f} BDT (z={z_score:.1f} vs. their own history, "
+            f"{len(history)} prior transactions). This may be a legitimate large transaction, but it should be "
+            "reviewed before acting on it. This is not a fraud determination."
+        )
+    else:
+        message = (
+            f"This agent's most recent {provider} {transaction_type.replace('_', '-')} ({latest.amount:.0f} BDT) is "
+            f"consistent with their own historical pattern (avg {hist_mean:.0f} BDT over {len(history)} prior "
+            "transactions) - no review needed on this basis."
+        )
+
+    return AmountOutlierResult(
+        agent_id=agent_id,
+        provider=provider,
+        transaction_type=transaction_type,
+        flagged=flagged,
+        evaluated_transaction_id=latest.provider_txn_id,
+        evaluated_amount=latest.amount,
+        evaluated_at=latest.occurred_at,
+        historical_sample_size=len(history),
+        historical_mean=hist_mean,
+        historical_stdev=hist_stdev,
+        z_score=z_score,
+        confidence=confidence,
+        message=message,
     )

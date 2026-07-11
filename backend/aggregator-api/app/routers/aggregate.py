@@ -3,7 +3,7 @@ from sqlmodel import Session, select
 
 from app.db import get_shared_db
 from app.models import ProviderBalance
-from app.schemas import AgentAggregateOut, AnomalyOut, ForecastOut, ProviderBalanceOut
+from app.schemas import AgentAggregateOut, AmountOutlierOut, AnomalyOut, ForecastOut, ProviderBalanceOut
 from app.services import anomaly as anomaly_service
 from app.services import forecast as forecast_service
 from app.services.cash import PROVIDERS, evaluate_cash
@@ -120,6 +120,49 @@ def get_agent_anomalies(
             sample_transaction_ids=r.sample_transaction_ids,
             window_start=r.window_start,
             window_end=r.window_end,
+            confidence=r.confidence,
+            message=r.message,
+        )
+        for r in results
+    ]
+
+
+@router.get("/anomaly/{agent_id}/historical", response_model=list[AmountOutlierOut])
+def get_agent_historical_outliers(
+    agent_id: str,
+    provider: str = Query(None, description="Limit to one provider (bkash/nagad/rocket); omit to check all three."),
+    transaction_type: str = Query("cash_out", description="cash_out or cash_in"),
+    session: Session = Depends(get_shared_db),
+):
+    """Separate question from /anomaly above: not 'is there a burst right
+    now' but 'is this agent's most recent transaction unusual for what THIS
+    agent specifically tends to do', judged against their own historical
+    distribution. Needs real historical depth to mean anything - see
+    provider-api/app/historical_seed.py."""
+    providers = [provider] if provider else list(PROVIDERS)
+    unknown = set(providers) - set(PROVIDERS)
+    if unknown:
+        raise HTTPException(400, f"Unknown provider(s): {sorted(unknown)}. Valid: {list(PROVIDERS)}")
+    if transaction_type not in ("cash_out", "cash_in"):
+        raise HTTPException(400, "transaction_type must be 'cash_out' or 'cash_in'")
+
+    results = [
+        anomaly_service.detect_amount_outlier(session, agent_id, p, transaction_type=transaction_type)
+        for p in providers
+    ]
+    return [
+        AmountOutlierOut(
+            agent_id=r.agent_id,
+            provider=r.provider,
+            transaction_type=r.transaction_type,
+            flagged=r.flagged,
+            evaluated_transaction_id=r.evaluated_transaction_id,
+            evaluated_amount=round(r.evaluated_amount, 2) if r.evaluated_amount is not None else None,
+            evaluated_at=r.evaluated_at,
+            historical_sample_size=r.historical_sample_size,
+            historical_mean=round(r.historical_mean, 2) if r.historical_mean is not None else None,
+            historical_stdev=round(r.historical_stdev, 2) if r.historical_stdev is not None else None,
+            z_score=round(r.z_score, 2) if r.z_score is not None else None,
             confidence=r.confidence,
             message=r.message,
         )
