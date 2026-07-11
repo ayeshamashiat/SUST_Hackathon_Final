@@ -424,3 +424,63 @@ timestamp.
 - `routers/factory.py`, `routers/bkash.py`, `routers/nagad.py`, `routers/rocket.py`
 - `main.py` (rewritten: startup lifespan now calls `init_db()` + `seed_all()`, includes the three provider routers)
 
+---
+
+### 2026-07-11 — Phase 3: Transaction simulator
+
+**Prompt**: Implement the transaction simulator as part of Provider API
+(not a separate container) with four modes - normal, Eid demand spike
+(legitimate, must not resemble suspicious activity), injected anomaly
+(near-identical amounts, repeated accounts, tight window, tagged
+`is_injected_anomaly=True`, never exposed publicly), and feed delay (pause
+one provider's updates so sync confidence is affected later) - behind
+exactly four endpoints: `POST /simulator/run`, `POST /simulator/inject-anomaly`,
+`POST /simulator/feed-delay`, `GET /simulator/status`. No architecture
+changes, stop after this phase.
+
+**Summary**: Added `app/simulator/` to provider-api: `state.py` (in-memory,
+single-process - a restart resets pause flags/active scenario, not the
+transaction data itself, which lives in Postgres), `engine.py`
+(`apply_transaction` - the same cash/e-money coupling `seed.py` uses, so live
+generation stays consistent with seeded history - plus `generate_normal`,
+`generate_eid_spike`, `generate_anomaly_burst`, and the background `tick()`
+loop), and `schemas.py`. Added `app/routers/simulator.py` exposing the four
+requested endpoints, with input validation against the known provider/agent
+lists (400, not a silent no-op, on an unknown value). Wired a background
+tick loop into `main.py`'s lifespan (starts automatically, like the old
+single-process app's simulator did) so there's continuous live movement for
+a demo by default, on top of which the four endpoints let you inject a
+specific scenario on demand. `/simulator/run`'s `duration_minutes` lets an
+Eid spike persist across many ticks rather than being a single flat batch.
+Feed delay is implemented as a genuine pause (the paused provider's
+`balances.last_updated` simply stops advancing) rather than artificially
+backdating anything - Phase 4's sync-service will derive staleness from that
+frozen timestamp naturally.
+
+Verified end-to-end against `postgres` + `provider-api` only (old backend
+and the other two new services untouched): background loop generates
+normal-mode transactions immediately on startup; `/simulator/run` with
+`mode=eid_spike` produced diverse, wide-ranging account references and
+mostly cash-out transactions - visibly not anomaly-shaped; `/simulator/
+inject-anomaly` produced a tight cluster of near-identical (~5000 BDT ±30)
+cash-outs from a 3-account repeating pool, correctly interleaved with
+ambient normal traffic in the transaction history; `/simulator/feed-delay`
+froze rocket's transaction count and `last_updated` timestamp while bkash/
+nagad kept advancing during the same two tick cycles, then resumed cleanly;
+unknown provider/agent values on any endpoint return 400; `is_injected_
+anomaly` confirmed absent from every transaction response via direct grep.
+
+**Assumptions made**: (1) A background tick loop runs by default (matching
+the old app's behavior and the original brief's "not just real-time
+background generation" phrasing, which implies background generation is the
+baseline the on-demand endpoints supplement). (2) `/simulator/run` triggers
+an immediate batch synchronously and, if `duration_minutes > 0`, also sets
+the ambient mode for the background loop going forward - not two unrelated
+behaviors. (3) No explicit stop-the-whole-loop endpoint was requested, so
+none was added; `feed-delay` only pauses one provider at a time, by design.
+
+**Files modified** (all new, under `backend/provider-api/app/`):
+- `simulator/state.py`, `simulator/engine.py`, `simulator/schemas.py`
+- `routers/simulator.py`
+- `main.py` (starts/stops the background loop in `lifespan`, includes the simulator router)
+
