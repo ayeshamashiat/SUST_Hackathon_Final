@@ -41,6 +41,43 @@ Health checks:
 curl http://localhost:8000/health   # aggregator-api
 curl http://localhost:8001/health   # provider-api
 curl http://localhost:8002/health   # sync-service
+curl http://localhost:8002/sync/status   # sync-service: per-provider sync state + status counts (debug-only, not required by any spec)
+```
+
+## Postgres roles (updated Phase 4)
+
+Five roles now exist, each scoped to exactly what it needs - this is
+enforced by Postgres `GRANT`/`REVOKE`, not just by which connection string a
+service happens to be given:
+
+| Role | Used by | Can read | Can write |
+|---|---|---|---|
+| `bkash_service` / `nagad_service` / `rocket_service` | provider-api | its own provider DB only | its own provider DB only |
+| `sync_service` | sync-service | all 3 provider DBs (read-only) + `shared_db` | `shared_db` only - owns/creates its schema |
+| `shared_service` | aggregator-api (Phase 5, not built yet) | `shared_db` only | nothing - `SELECT`-only, cannot `CREATE`/`INSERT`/`UPDATE` |
+
+This is what makes "only the Sync Service may write to shared_db" and
+"a provider router must never read another provider's database" real
+guarantees rather than conventions - see the boundary checks below.
+
+**If you already have a `pgdata` volume from before Phase 4**: `db-init/init-databases.sh` only runs on a database's *first* initialization, so an existing volume won't pick up the `sync_service` role or `shared_service`'s tightened grants automatically. Either:
+- `docker compose down -v` (destructive - wipes all Postgres data, always confirm before running this), then `docker compose up --build`, or
+- apply the equivalent grants live against the running container (see the SQL in `db-init/init-databases.sh` from the `sync_service` role onward - every statement there is safe to run against an already-initialized volume, since it's all `CREATE ROLE`/`GRANT`/`REVOKE`, nothing destructive to existing data).
+
+## Verifying the sync/provider boundaries
+
+```bash
+# provider isolation (Phase 1)
+docker compose exec postgres psql -U bkash_service -d nagad_db -c "SELECT 1;"
+# -> permission denied for database "nagad_db"
+
+# sync_service is read-only against provider DBs
+docker compose exec postgres psql -U sync_service -d bkash_db -c "UPDATE balances SET emoney_balance = 0;"
+# -> permission denied for table balances
+
+# shared_service (aggregator-api's future role) cannot write shared_db
+docker compose exec postgres psql -U shared_service -d shared_db -c "CREATE TABLE probe (id int);"
+# -> permission denied for schema public
 ```
 
 Stop everything:

@@ -484,3 +484,93 @@ none was added; `feed-delay` only pauses one provider at a time, by design.
 - `routers/simulator.py`
 - `main.py` (starts/stops the background loop in `lifespan`, includes the simulator router)
 
+---
+
+### 2026-07-11 — Phase 4: Sync service
+
+**Prompt**: Implement synchronization from the three provider databases into
+`shared_db` (a read-only projection - only the Sync Service may write to it).
+Poll `bkash_db`/`nagad_db`/`rocket_db`, populate `provider_balances` and
+`transactions_projection`, compute `staleness_seconds` and `sync_status`
+(`ok`/`delayed`/`failed`/`conflicting`) per provider per agent. Sync must be
+idempotent (no duplicate projected transactions), maintain `synced_at`
+timestamps, and the stored staleness/status must be positioned to actually
+drive forecast confidence later (Phase 5), not just sit there unused. Stop
+after this phase; include a suggested commit message.
+
+**Summary**: Added `sync-service/app/`: `provider_models.py` (a deliberate,
+read-only duplicate of provider-api's `Balance`/`Transaction` schema - the
+two services are independently deployable, so they share a DB contract, not
+Python code), `models.py` (shared_db's actual schema: `ProviderBalance`
+upserted per agent+provider, append-only `TransactionProjection`, and
+`SyncState` - a per-provider watermark/failure-tracking table), `sync.py`
+(the real workflow), and a background loop in `main.py` wired the same way
+as provider-api's simulator loop.
+
+`sync_status` is a severity-ranked, genuinely-triggered state machine, not a
+name attached to a guess: **failed** when the poll itself raises (caught,
+doesn't crash the cycle - existing projection rows are kept and just
+re-flagged, never blanked); **conflicting** when a provider's own polled
+balance doesn't reconcile with its own transaction history since the last
+successful sync (`existing_balance + new_transaction_deltas` vs. the
+provider's actual current balance, outside a float-rounding epsilon) -
+self-clears once the mismatch source stops recurring, rather than being a
+permanent quarantine; **delayed** when `source_updated_at` (the provider's
+own `balances.last_updated`, not sync-service's clock) hasn't advanced past
+`SYNC_STALE_AFTER_SECONDS`; **ok** otherwise. This is exactly what makes
+Phase 3's feed-delay simulator meaningful end-to-end: pausing a provider
+there really does turn into `delayed` here.
+
+Idempotency: a per-provider `last_synced_txn_id` watermark makes each poll
+incremental (only fetch transactions past the watermark), plus an
+existence check against `transactions_projection` before inserting (defends
+against re-processing the same batch if a crash landed between insert and
+watermark-commit) and a DB-level unique constraint on `(provider,
+provider_txn_id)` as a schema-level backstop.
+
+**Also corrected the DB permission model** (this phase's "only the Sync
+Service may write to shared_db" requirement forced the issue): `db-init/
+init-databases.sh` now creates a `sync_service` role with read-only grants
+on the three provider databases (via `ALTER DEFAULT PRIVILEGES FOR ROLE
+<provider>_service`, so it also covers any table created after this script
+runs) and full read-write on `shared_db` (it owns/creates that schema).
+`shared_service` (unused until now - reserved for aggregator-api, Phase 5)
+had its grants corrected from the original "ALL PRIVILEGES" down to
+`SELECT`-only, via `ALTER DEFAULT PRIVILEGES FOR ROLE sync_service ... TO
+shared_service`. Since the actual Postgres volume from Phases 1-3 already
+existed (and `db-init` only runs on a database's first initialization), the
+equivalent grants were also applied live against the running container, non-
+destructively - no data was wiped. Caught and fixed one mistake during that
+live correction: the first `REVOKE ALL PRIVILEGES ON SCHEMA public FROM
+shared_service` ran against the wrong database (missing `-d shared_db`,
+so it silently hit the default `postgres` maintenance DB instead) - verified
+this by testing that `shared_service` really couldn't create a table
+afterward, caught that it still could, traced it to the missing `-d` flag,
+and fixed it before moving on.
+
+**Verified end-to-end** against `postgres` + `provider-api` + `sync-service`
+(old backend and aggregator-api untouched): all 45 agent×provider balances
+projected correctly; a Phase-3 anomaly burst's 9 transactions survived
+projection with `is_injected_anomaly=true` intact; re-ran a full cycle and
+restarted the container mid-stream - zero duplicate `(provider,
+provider_txn_id)` pairs either time; used `/simulator/feed-delay` to pause
+bkash and confirmed all 15 of its projected rows genuinely went `delayed`
+after `SYNC_STALE_AFTER_SECONDS` elapsed, then recovered to `ok` after
+resuming; revoked and restored `sync_service`'s `CONNECT` on `bkash_db`
+(terminating its pooled connection first, since a revoke doesn't kill an
+already-open session) and confirmed all 15 rows genuinely went `failed`
+with `consecutive_failures` incrementing, then recovered; directly tampered
+with a balance via `UPDATE balances SET emoney_balance = emoney_balance +
+99999` (bypassing its own transaction ledger) and confirmed the very next
+cycle flagged it `conflicting`, then confirmed it self-cleared to `ok` once
+the mismatch source stopped recurring. Re-confirmed Phase 1's provider
+boundary still holds, and additionally confirmed `sync_service` cannot
+write to any provider DB and `shared_service` cannot write to `shared_db`.
+
+**Files modified**:
+- `backend/sync-service/app/provider_models.py`, `models.py`, `config.py`, `db.py`, `sync.py` (all new)
+- `backend/sync-service/app/main.py` (rewritten: background sync loop + `/sync/status`)
+- `backend/db-init/init-databases.sh` (adds `sync_service` role, corrects `shared_service` to read-only)
+- `backend/.env.example`, `backend/docker-compose.yml` (new `SYNC_*` credentials/URLs)
+- `docs/deployment.md` (documents the 5-role permission model and how to apply it to a pre-Phase-4 volume)
+

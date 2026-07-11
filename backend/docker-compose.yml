@@ -8,6 +8,7 @@ services:
       NAGAD_DB_PASSWORD: ${NAGAD_DB_PASSWORD:-nagad_pw}
       ROCKET_DB_PASSWORD: ${ROCKET_DB_PASSWORD:-rocket_pw}
       SHARED_DB_PASSWORD: ${SHARED_DB_PASSWORD:-shared_pw}
+      SYNC_SERVICE_DB_PASSWORD: ${SYNC_SERVICE_DB_PASSWORD:-sync_pw}
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./db-init:/docker-entrypoint-initdb.d:ro
