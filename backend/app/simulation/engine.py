@@ -53,6 +53,7 @@ def _apply_transaction(
     customer_ref: str,
     area: str,
     now: datetime,
+    is_injected_anomaly: bool = False,
 ) -> Transaction:
     drawer = session.exec(select(CashDrawer).where(CashDrawer.agent_id == agent_id)).one()
     balance = session.exec(
@@ -76,6 +77,7 @@ def _apply_transaction(
         customer_ref=customer_ref,
         area=area,
         status=TransactionStatus.SUCCESS if can_fulfill else TransactionStatus.FAILED,
+        is_injected_anomaly=is_injected_anomaly,
         created_at=now,
     )
     session.add(tx)
@@ -127,7 +129,15 @@ def _maybe_fire_burst(session: Session, profile: AgentProfile, now: datetime) ->
         amount = round(random.uniform(*profile.burst_amount_range), 2)
         customer = random.choice(profile.burst_customer_pool)
         _apply_transaction(
-            session, profile.agent_id, profile.burst_provider, TransactionType.CASH_OUT, amount, customer, profile.area, now
+            session,
+            profile.agent_id,
+            profile.burst_provider,
+            TransactionType.CASH_OUT,
+            amount,
+            customer,
+            profile.area,
+            now,
+            is_injected_anomaly=True,
         )
 
 

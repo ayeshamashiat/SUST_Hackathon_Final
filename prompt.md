@@ -1,13 +1,11 @@
 # Commit Prompt
 
-## Phase 6 — Alert Engine
+## Phase 7 — Offline Evaluation
 
-Continue from the existing project. Alert Engine is an internal module inside Aggregator; do not create another service.
+Continue from the current codebase.
 
-Implement automatic liquidity, anomaly, and data-quality alerts after synchronization. Route liquidity alerts to `field_officer`, anomaly and data-quality alerts to `provider_ops`, and escalations to `risk_analyst`.
+Evaluate anomaly detection quality using simulator labels, `is_injected_anomaly`.
 
-Provide `GET /alerts` and alert lifecycle endpoints for acknowledge, escalate, and resolve. Every lifecycle action must create an `alert_event`.
+Calculate precision, recall, and false-positive rate separately for normal traffic, Eid spike, and injected anomalies. Ensure Eid spikes are not incorrectly flagged.
 
-Use `services/llm.py` only for alert narratives. Default to mock mode; do not enable a live API without explicit approval. Generate English, Bangla, and Banglish narratives without accusing users of fraud.
-
-Document the lifecycle diagram, sample alerts, sample evidence, and owner routing.
+Produce JSON and Markdown reports suitable for the README and presentation.

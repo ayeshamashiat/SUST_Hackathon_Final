@@ -97,6 +97,8 @@ class Transaction(SQLModel, table=True):
     customer_ref: str
     area: str
     status: TransactionStatus = TransactionStatus.SUCCESS
+    # Ground-truth label for synthetic evaluation only; never a real-world risk label.
+    is_injected_anomaly: bool = False
     created_at: datetime = Field(default_factory=utcnow, index=True)
 
 
