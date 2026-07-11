@@ -24,9 +24,9 @@ def seed(session: Session) -> None:
 
 
 def reset(session: Session) -> None:
-    from app.models.models import Alert, Case, CaseEvent, Transaction
+    from app.models.models import Alert, AlertEvent, Case, CaseEvent, Transaction
 
-    for model in (CaseEvent, Case, Alert, Transaction, DataFeedStatus, ProviderBalance, CashDrawer, Agent, Provider):
+    for model in (AlertEvent, CaseEvent, Case, Alert, Transaction, DataFeedStatus, ProviderBalance, CashDrawer, Agent, Provider):
         for row in session.exec(select(model)).all():
             session.delete(row)
     session.commit()

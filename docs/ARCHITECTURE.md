@@ -35,7 +35,7 @@ flowchart TB
     end
 
     subgraph API["FastAPI"]
-        REST["REST routers<br/>/agents /balances /transactions<br/>/alerts /cases /operations /metrics /simulation"]
+        REST["REST routers<br/>/agents /balances /transactions<br/>/alerts /cases /metrics /simulation"]
         WS["WebSocket /ws/live<br/>(Pass 2+)"]
     end
 
@@ -75,6 +75,7 @@ flowchart TB
 ## Component notes
 
 - **Provider boundary**: `ProviderBalance` rows are keyed by `(agent_id, provider_id)` and are never summed into a single "combined wallet" value in storage — only displayed side by side. No code path converts or transfers value between providers.
+- **Validation & metrics**: the `/metrics` endpoint reports proxy metrics for sync latency, forecast lead time, anomaly precision/recall, alert explanation coverage, and per-provider sync health so the demo can show operational evidence without pretending to be a production observability stack.
 - **Simulation Engine**: the only source of transactions/balances (no real provider APIs are called, per challenge constraints). Scenario presets (A–D from the brief) are parameter sets fed into the same generator, not special-cased code paths — this keeps the demo and the "real" logic identical.
 - **Analytics**: pure functions over `Transaction`/`ProviderBalance`/`DataFeedStatus` history — deterministic, unit-testable, no external calls. This is what satisfies the "use AI/analytics meaningfully" requirement without any LLM dependency.
 - **Alert & Coordination Engine**: the only place that writes `Alert`/`Case`/`CaseEvent` rows. Routing table is a static, documented mapping (alert type → stakeholder role) — explicit and auditable rather than implicit.

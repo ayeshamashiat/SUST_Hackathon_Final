@@ -22,16 +22,19 @@ def _routing_key(category: AlertCategory, provider_id: Optional[str]) -> str:
 
 _ROUTING_TABLE = {
     "LIQUIDITY_CASH": {
+        "owner_role": "field_officer",
         "role": "Field Officer",
         "owner": "Field Officer (on duty)",
         "action": "Arrange additional physical cash for this outlet before the projected shortage time.",
     },
     "LIQUIDITY_PROVIDER": {
-        "role": "Provider Operations",
-        "owner": "{provider} Operations Team",
-        "action": "Coordinate an e-money float top-up for this agent through {provider}'s approved channel.",
+        "owner_role": "field_officer",
+        "role": "Field Officer",
+        "owner": "{provider} Field Officer (on duty)",
+        "action": "Coordinate an approved provider-specific float support request with {provider} Operations.",
     },
     "ANOMALY_VELOCITY": {
+        "owner_role": "provider_ops",
         "role": "Provider Operations",
         "owner": "{provider} Operations Team",
         "action": (
@@ -40,6 +43,7 @@ _ROUTING_TABLE = {
         ),
     },
     "DATA_QUALITY": {
+        "owner_role": "provider_ops",
         "role": "Provider Operations",
         "owner": "{provider} Operations Team",
         "action": "Confirm the data feed with {provider}'s technical team; do not act on this estimate until the feed is healthy again.",
@@ -52,6 +56,7 @@ def get_routing(category: AlertCategory, provider_id: Optional[str], provider_na
     entry = _ROUTING_TABLE[key]
     label = provider_name or "the provider"
     return {
+        "owner_role": entry["owner_role"],
         "role": entry["role"],
         "owner": entry["owner"].format(provider=label),
         "action": entry["action"].format(provider=label),

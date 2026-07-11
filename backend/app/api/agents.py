@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Annotated, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
@@ -63,7 +63,7 @@ def get_balances(agent_id: str, session: Session = Depends(get_session)):
 def get_transactions(
     agent_id: str,
     provider_id: Optional[str] = None,
-    limit: int = Query(50, le=500),
+    limit: Annotated[int, Query(le=500)] = 50,
     session: Session = Depends(get_session),
 ):
     stmt = select(Transaction).where(Transaction.agent_id == agent_id)

@@ -8,10 +8,10 @@ def test_cash_liquidity_routes_to_field_officer():
     assert "Field Officer" in routing["owner"]
 
 
-def test_provider_liquidity_routes_to_provider_operations():
+def test_provider_liquidity_routes_to_field_officer():
     routing = get_routing(AlertCategory.LIQUIDITY, "bkash", "bKash")
-    assert routing["role"] == "Provider Operations"
-    assert routing["owner"] == "bKash Operations Team"
+    assert routing["role"] == "Field Officer"
+    assert routing["owner_role"] == "field_officer"
     assert "bKash" in routing["action"]
 
 
@@ -19,6 +19,7 @@ def test_anomaly_routes_with_escalation_language():
     routing = get_routing(AlertCategory.ANOMALY, "nagad", "Nagad")
     assert routing["role"] == "Provider Operations"
     assert "Risk/Compliance" in routing["action"]
+    assert routing["owner_role"] == "provider_ops"
 
 
 def test_data_quality_routes_to_provider_operations():
