@@ -2,12 +2,22 @@
 set -euo pipefail
 
 # Creates four logically separate databases (bkash_db, nagad_db, rocket_db,
-# shared_db) and a dedicated, restricted-privilege role per database. Each
-# role can only connect to and operate on its own database - a bkash-scoped
-# connection has no grant to read nagad_db or rocket_db, enforcing provider
-# boundaries at the Postgres permission layer, not just in application code.
+# shared_db) and one restricted-privilege role per database, plus a fifth
+# cross-cutting role (sync_service) for the Sync Service.
+#
+# Provider boundary: each provider role can only connect to its own
+# database - enforced at the Postgres permission layer, not just in
+# application code.
+#
+# shared_db write boundary: `shared_service` (aggregator-api's future
+# credential, Phase 5) gets CONNECT + SELECT only - it can never write here.
+# `sync_service` is the only role with write access to shared_db, and is
+# also the only role (besides each provider's own service role) that can
+# read the three provider databases - a deliberately separate credential
+# from bkash_service/nagad_service/rocket_service, so even a compromised
+# sync-service cannot write provider data.
 
-create_db_and_role() {
+create_provider_db_and_role() {
   local db_name="$1"
   local role_name="$2"
   local role_password="$3"
@@ -24,13 +34,41 @@ EOSQL
 EOSQL
 }
 
-create_db_and_role "bkash_db"  "bkash_service"  "${BKASH_DB_PASSWORD:-bkash_pw}"
-create_db_and_role "nagad_db"  "nagad_service"  "${NAGAD_DB_PASSWORD:-nagad_pw}"
-create_db_and_role "rocket_db" "rocket_service" "${ROCKET_DB_PASSWORD:-rocket_pw}"
-create_db_and_role "shared_db" "shared_service" "${SHARED_DB_PASSWORD:-shared_pw}"
+create_provider_db_and_role "bkash_db"  "bkash_service"  "${BKASH_DB_PASSWORD:-bkash_pw}"
+create_provider_db_and_role "nagad_db"  "nagad_service"  "${NAGAD_DB_PASSWORD:-nagad_pw}"
+create_provider_db_and_role "rocket_db" "rocket_service" "${ROCKET_DB_PASSWORD:-rocket_pw}"
 
-# NOTE: sync-service's cross-database role (it needs read access to all three
-# provider DBs plus write access to shared_db) is deliberately NOT created
-# here yet. Its exact grants depend on tables that don't exist until Phase 2/3
-# move real models in - adding it now, untestable, would just be a guess.
-# Tracked for Phase 3 (sync-service implementation).
+# shared_db: created with only a CONNECT grant for shared_service - table-
+# level SELECT is added below, once sync_service (the table owner) exists,
+# via a default-privilege rule that applies to whatever sync_service creates.
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" <<-EOSQL
+  CREATE DATABASE shared_db;
+  CREATE ROLE shared_service WITH LOGIN PASSWORD '${SHARED_DB_PASSWORD:-shared_pw}';
+  REVOKE ALL PRIVILEGES ON DATABASE shared_db FROM PUBLIC;
+  GRANT CONNECT ON DATABASE shared_db TO shared_service;
+EOSQL
+
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" <<-EOSQL
+  CREATE ROLE sync_service WITH LOGIN PASSWORD '${SYNC_SERVICE_DB_PASSWORD:-sync_pw}';
+  GRANT CONNECT ON DATABASE bkash_db, nagad_db, rocket_db, shared_db TO sync_service;
+  GRANT ALL PRIVILEGES ON DATABASE shared_db TO sync_service;
+EOSQL
+
+# Read-only access to each provider database for sync_service, scoped to
+# whatever that provider's own service role creates (provider-api owns that
+# schema; sync-service only ever reads it).
+for role_db in "bkash_service:bkash_db" "nagad_service:nagad_db" "rocket_service:rocket_db"; do
+  role="${role_db%%:*}"
+  db="${role_db##*:}"
+  psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "${db}" <<-EOSQL
+    GRANT USAGE ON SCHEMA public TO sync_service;
+    ALTER DEFAULT PRIVILEGES FOR ROLE ${role} IN SCHEMA public GRANT SELECT ON TABLES TO sync_service;
+EOSQL
+done
+
+# sync_service owns (creates) the shared_db schema; shared_service
+# (aggregator-api, Phase 5) gets SELECT-only on whatever sync_service creates.
+psql -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "shared_db" <<-EOSQL
+  GRANT ALL PRIVILEGES ON SCHEMA public TO sync_service;
+  ALTER DEFAULT PRIVILEGES FOR ROLE sync_service IN SCHEMA public GRANT SELECT ON TABLES TO shared_service;
+EOSQL

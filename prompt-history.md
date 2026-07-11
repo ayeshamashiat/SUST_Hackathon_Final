@@ -424,3 +424,255 @@ timestamp.
 - `routers/factory.py`, `routers/bkash.py`, `routers/nagad.py`, `routers/rocket.py`
 - `main.py` (rewritten: startup lifespan now calls `init_db()` + `seed_all()`, includes the three provider routers)
 
+---
+
+### 2026-07-11 — Phase 3: Transaction simulator
+
+**Prompt**: Implement the transaction simulator as part of Provider API
+(not a separate container) with four modes - normal, Eid demand spike
+(legitimate, must not resemble suspicious activity), injected anomaly
+(near-identical amounts, repeated accounts, tight window, tagged
+`is_injected_anomaly=True`, never exposed publicly), and feed delay (pause
+one provider's updates so sync confidence is affected later) - behind
+exactly four endpoints: `POST /simulator/run`, `POST /simulator/inject-anomaly`,
+`POST /simulator/feed-delay`, `GET /simulator/status`. No architecture
+changes, stop after this phase.
+
+**Summary**: Added `app/simulator/` to provider-api: `state.py` (in-memory,
+single-process - a restart resets pause flags/active scenario, not the
+transaction data itself, which lives in Postgres), `engine.py`
+(`apply_transaction` - the same cash/e-money coupling `seed.py` uses, so live
+generation stays consistent with seeded history - plus `generate_normal`,
+`generate_eid_spike`, `generate_anomaly_burst`, and the background `tick()`
+loop), and `schemas.py`. Added `app/routers/simulator.py` exposing the four
+requested endpoints, with input validation against the known provider/agent
+lists (400, not a silent no-op, on an unknown value). Wired a background
+tick loop into `main.py`'s lifespan (starts automatically, like the old
+single-process app's simulator did) so there's continuous live movement for
+a demo by default, on top of which the four endpoints let you inject a
+specific scenario on demand. `/simulator/run`'s `duration_minutes` lets an
+Eid spike persist across many ticks rather than being a single flat batch.
+Feed delay is implemented as a genuine pause (the paused provider's
+`balances.last_updated` simply stops advancing) rather than artificially
+backdating anything - Phase 4's sync-service will derive staleness from that
+frozen timestamp naturally.
+
+Verified end-to-end against `postgres` + `provider-api` only (old backend
+and the other two new services untouched): background loop generates
+normal-mode transactions immediately on startup; `/simulator/run` with
+`mode=eid_spike` produced diverse, wide-ranging account references and
+mostly cash-out transactions - visibly not anomaly-shaped; `/simulator/
+inject-anomaly` produced a tight cluster of near-identical (~5000 BDT ±30)
+cash-outs from a 3-account repeating pool, correctly interleaved with
+ambient normal traffic in the transaction history; `/simulator/feed-delay`
+froze rocket's transaction count and `last_updated` timestamp while bkash/
+nagad kept advancing during the same two tick cycles, then resumed cleanly;
+unknown provider/agent values on any endpoint return 400; `is_injected_
+anomaly` confirmed absent from every transaction response via direct grep.
+
+**Assumptions made**: (1) A background tick loop runs by default (matching
+the old app's behavior and the original brief's "not just real-time
+background generation" phrasing, which implies background generation is the
+baseline the on-demand endpoints supplement). (2) `/simulator/run` triggers
+an immediate batch synchronously and, if `duration_minutes > 0`, also sets
+the ambient mode for the background loop going forward - not two unrelated
+behaviors. (3) No explicit stop-the-whole-loop endpoint was requested, so
+none was added; `feed-delay` only pauses one provider at a time, by design.
+
+**Files modified** (all new, under `backend/provider-api/app/`):
+- `simulator/state.py`, `simulator/engine.py`, `simulator/schemas.py`
+- `routers/simulator.py`
+- `main.py` (starts/stops the background loop in `lifespan`, includes the simulator router)
+
+---
+
+### 2026-07-11 — Phase 4: Sync service
+
+**Prompt**: Implement synchronization from the three provider databases into
+`shared_db` (a read-only projection - only the Sync Service may write to it).
+Poll `bkash_db`/`nagad_db`/`rocket_db`, populate `provider_balances` and
+`transactions_projection`, compute `staleness_seconds` and `sync_status`
+(`ok`/`delayed`/`failed`/`conflicting`) per provider per agent. Sync must be
+idempotent (no duplicate projected transactions), maintain `synced_at`
+timestamps, and the stored staleness/status must be positioned to actually
+drive forecast confidence later (Phase 5), not just sit there unused. Stop
+after this phase; include a suggested commit message.
+
+**Summary**: Added `sync-service/app/`: `provider_models.py` (a deliberate,
+read-only duplicate of provider-api's `Balance`/`Transaction` schema - the
+two services are independently deployable, so they share a DB contract, not
+Python code), `models.py` (shared_db's actual schema: `ProviderBalance`
+upserted per agent+provider, append-only `TransactionProjection`, and
+`SyncState` - a per-provider watermark/failure-tracking table), `sync.py`
+(the real workflow), and a background loop in `main.py` wired the same way
+as provider-api's simulator loop.
+
+`sync_status` is a severity-ranked, genuinely-triggered state machine, not a
+name attached to a guess: **failed** when the poll itself raises (caught,
+doesn't crash the cycle - existing projection rows are kept and just
+re-flagged, never blanked); **conflicting** when a provider's own polled
+balance doesn't reconcile with its own transaction history since the last
+successful sync (`existing_balance + new_transaction_deltas` vs. the
+provider's actual current balance, outside a float-rounding epsilon) -
+self-clears once the mismatch source stops recurring, rather than being a
+permanent quarantine; **delayed** when `source_updated_at` (the provider's
+own `balances.last_updated`, not sync-service's clock) hasn't advanced past
+`SYNC_STALE_AFTER_SECONDS`; **ok** otherwise. This is exactly what makes
+Phase 3's feed-delay simulator meaningful end-to-end: pausing a provider
+there really does turn into `delayed` here.
+
+Idempotency: a per-provider `last_synced_txn_id` watermark makes each poll
+incremental (only fetch transactions past the watermark), plus an
+existence check against `transactions_projection` before inserting (defends
+against re-processing the same batch if a crash landed between insert and
+watermark-commit) and a DB-level unique constraint on `(provider,
+provider_txn_id)` as a schema-level backstop.
+
+**Also corrected the DB permission model** (this phase's "only the Sync
+Service may write to shared_db" requirement forced the issue): `db-init/
+init-databases.sh` now creates a `sync_service` role with read-only grants
+on the three provider databases (via `ALTER DEFAULT PRIVILEGES FOR ROLE
+<provider>_service`, so it also covers any table created after this script
+runs) and full read-write on `shared_db` (it owns/creates that schema).
+`shared_service` (unused until now - reserved for aggregator-api, Phase 5)
+had its grants corrected from the original "ALL PRIVILEGES" down to
+`SELECT`-only, via `ALTER DEFAULT PRIVILEGES FOR ROLE sync_service ... TO
+shared_service`. Since the actual Postgres volume from Phases 1-3 already
+existed (and `db-init` only runs on a database's first initialization), the
+equivalent grants were also applied live against the running container, non-
+destructively - no data was wiped. Caught and fixed one mistake during that
+live correction: the first `REVOKE ALL PRIVILEGES ON SCHEMA public FROM
+shared_service` ran against the wrong database (missing `-d shared_db`,
+so it silently hit the default `postgres` maintenance DB instead) - verified
+this by testing that `shared_service` really couldn't create a table
+afterward, caught that it still could, traced it to the missing `-d` flag,
+and fixed it before moving on.
+
+**Verified end-to-end** against `postgres` + `provider-api` + `sync-service`
+(old backend and aggregator-api untouched): all 45 agent×provider balances
+projected correctly; a Phase-3 anomaly burst's 9 transactions survived
+projection with `is_injected_anomaly=true` intact; re-ran a full cycle and
+restarted the container mid-stream - zero duplicate `(provider,
+provider_txn_id)` pairs either time; used `/simulator/feed-delay` to pause
+bkash and confirmed all 15 of its projected rows genuinely went `delayed`
+after `SYNC_STALE_AFTER_SECONDS` elapsed, then recovered to `ok` after
+resuming; revoked and restored `sync_service`'s `CONNECT` on `bkash_db`
+(terminating its pooled connection first, since a revoke doesn't kill an
+already-open session) and confirmed all 15 rows genuinely went `failed`
+with `consecutive_failures` incrementing, then recovered; directly tampered
+with a balance via `UPDATE balances SET emoney_balance = emoney_balance +
+99999` (bypassing its own transaction ledger) and confirmed the very next
+cycle flagged it `conflicting`, then confirmed it self-cleared to `ok` once
+the mismatch source stopped recurring. Re-confirmed Phase 1's provider
+boundary still holds, and additionally confirmed `sync_service` cannot
+write to any provider DB and `shared_service` cannot write to `shared_db`.
+
+**Files modified**:
+- `backend/sync-service/app/provider_models.py`, `models.py`, `config.py`, `db.py`, `sync.py` (all new)
+- `backend/sync-service/app/main.py` (rewritten: background sync loop + `/sync/status`)
+- `backend/db-init/init-databases.sh` (adds `sync_service` role, corrects `shared_service` to read-only)
+- `backend/.env.example`, `backend/docker-compose.yml` (new `SYNC_*` credentials/URLs)
+- `docs/deployment.md` (documents the 5-role permission model and how to apply it to a pre-Phase-4 volume)
+
+---
+
+### 2026-07-11 — Phase 5: Aggregator API
+
+**Prompt**: Implement aggregator-api's analytics endpoints, reading only
+`shared_db` (never provider databases): `GET /aggregate/agent/{agent_id}`
+(cash balance, all provider balances, staleness, confidence) and
+`GET /aggregate/forecast/{agent_id}` (burn rate, projected shortage,
+confidence depending on staleness/missing/conflicting providers), plus
+explainable rule-based anomaly detection (rolling z-score, frequency
+analysis, account clustering - no black-box model; evidence must cite
+transaction IDs/timestamps/amounts; careful language only - "unusual",
+"requires review", "low confidence", never "fraud"). Don't modify
+provider-api. Stop after this phase; show a recommended commit message.
+
+**Summary**: A real gap surfaced immediately: `GET /aggregate/agent/{id}`
+is required to return a cash balance, but no component in this rebuilt
+architecture has ever generated, stored, or synced one - Phase 3's simulator
+only ever writes provider e-money transactions, and Phase 4 made `shared_db`
+writable by sync-service alone. Resolved it the way already established for
+this exact tension back in Phase 0 (cash isn't provider data, so it was
+never going to arrive via provider sync) but adapted to this phase's
+tighter, explicit constraint ("read ONLY shared_db"): rather than having any
+service write a cash column, `services/cash.py` **derives** the cash balance
+read-only, from `transactions_projection` already sitting in `shared_db` -
+every `cash_out` decreases cash (agent hands over physical money) and every
+`cash_in` increases it, the same coupling already established in
+provider-api's models/seed/simulator. A single documented opening-balance
+constant (`CASH_OPENING_BALANCE = 80,000`) stands in for a real per-agent
+starting-cash source, which does not exist yet - called out explicitly in
+`config.py` as a modeling assumption, not a hidden guess. No writes anywhere,
+no provider-api change, satisfies "read only shared_db" exactly as stated.
+
+Ported the burn-rate forecaster and velocity-anomaly detector's statistical
+approach from the earlier single-service prototype (proven, already
+documented there) onto `shared_db`'s schema, and added the confidence
+wiring the brief explicitly requires: `services/confidence.py` turns
+Phase 4's `staleness_seconds`/`sync_status` into a `HIGH`/`MEDIUM`/`LOW`
+signal (missing provider row, `failed`, and `conflicting` all map to `LOW`;
+`delayed` or staleness past 60s maps to `LOW`; otherwise `MEDIUM`/`HIGH` by
+freshness), and every forecast/aggregate response takes the *weaker* of its
+own statistical confidence and this data-quality confidence - a
+clean-looking trend computed from stale or conflicting source data cannot
+report as `HIGH`. Cash's confidence is the weakest across all three
+providers, since it depends on all of them.
+
+The anomaly detector combines three signals rather than z-score alone,
+specifically because a naive frequency-only detector would flag Phase 3's
+legitimate Eid-spike traffic as unusual (it IS high-volume): a rolling
+z-score of window transaction count vs. this agent+provider's own recent
+baseline (frequency), and an account-concentration ratio (unique accounts /
+window count) (clustering) - both must deviate together before anything is
+flagged, plus an amount-coefficient-of-variation figure carried as
+supporting evidence. Evidence cites real `provider_txn_id`s, timestamps, and
+amounts pulled directly from `transactions_projection`; every message uses
+"unusual"/"requires review"/confidence language and explicitly states "this
+is not a fraud determination."
+
+Added a third endpoint, `GET /aggregate/anomaly/{agent_id}`, not named in
+the brief's literal endpoint list - added so the detector has a
+demonstrable, sampleable output of its own (per this phase's "sample
+output" deliverable); Phase 6's alert engine is what will turn a flagged
+result here into a routed, owned Alert/Case.
+
+**Also fixed a real isolation gap found during verification**: every
+service was using `env_file: .env`, which hands EVERY service's credentials
+to EVERY container - `aggregator-api` was receiving `nagad_service`'s full
+read-write password in its own environment despite never reading it in
+code, meaning "aggregator must never query provider databases" was only
+true because the code didn't currently try, not because it couldn't.
+Replaced `env_file: .env` with an explicit `environment:` allow-list per
+service in `docker-compose.yml` (provider-api gets only its 3 provider
+URLs; sync-service gets only its `SYNC_*` credentials; aggregator-api gets
+only `SHARED_DATABASE_URL` + the shared staleness threshold) - `.env` is
+still the single source of values via Compose's `${VAR}` substitution, it's
+just no longer injected wholesale into every container. Verified by reading
+each container's actual environment directly.
+
+**Verified end-to-end** against all four services (old backend untouched),
+reusing the demo data accumulated across Phases 2-4 in the persisted
+Postgres volume: `/aggregate/agent` correctly showed per-provider
+confidence dropping to `LOW` for a genuinely stale provider and `MEDIUM`
+for fresh-but-not-instant ones; `/aggregate/forecast` showed `AT_RISK` cash
+with `top_contributors` correctly attributing most of the drain to bkash,
+and confidence correctly downgraded by the same staleness; triggered a
+fresh anomaly burst via Phase 3's simulator on a clean agent and confirmed
+`/aggregate/anomaly` flagged it live with real transaction-id evidence;
+triggered a fresh Eid-spike batch and confirmed it was **not** flagged
+despite a high z-score (2.79), because its account-concentration ratio was
+1.0 (fully diverse) - the exact false-positive this detector's two-signal
+design exists to avoid; re-confirmed the DB-level provider/shared_db
+boundaries still hold and additionally confirmed via `docker compose exec
+... env` that aggregator-api's container carries no provider-database
+credential at all after the compose fix.
+
+**Files added** (`backend/aggregator-api/app/`): `config.py`, `db.py`,
+`models.py`, `schemas.py`, `services/confidence.py`, `services/cash.py`,
+`services/forecast.py`, `services/anomaly.py`, `routers/aggregate.py`;
+`main.py` updated to include the new router.
+**Files modified**: `backend/docker-compose.yml` (env allow-lists),
+`docs/deployment.md` (documents the env-scoping fix).
+
