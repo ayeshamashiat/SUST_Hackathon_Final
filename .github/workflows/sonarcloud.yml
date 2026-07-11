@@ -1,0 +1,39 @@
+# Runs a SonarCloud scan on every push and every pull request.
+#
+# What happens automatically: GitHub spins up a temporary Ubuntu machine,
+# checks out your code, downloads the official SonarSource scan action, and
+# sends your source code's analysis to sonarcloud.io using the config in
+# sonar-project.properties (repo root). SonarCloud stores the result,
+# updates the Quality Gate, and (for pull requests) posts a summary comment.
+# Nothing is deployed anywhere - this is CI only, not CD.
+#
+# One-time setup required before this workflow can succeed - see
+# docs/sonarqube.md: create a SonarCloud account + project, then add this
+# repo's SONAR_TOKEN as a GitHub Actions secret
+# (Settings -> Secrets and variables -> Actions -> New repository secret).
+
+name: SonarCloud
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  sonarcloud:
+    name: SonarCloud scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+        with:
+          # SonarCloud's new-code/blame features want full git history, not
+          # just the latest commit.
+          fetch-depth: 0
+
+      - name: SonarCloud Scan
+        uses: SonarSource/sonarqube-scan-action@v4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
