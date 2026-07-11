@@ -4,12 +4,21 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 
 from app.core.database import get_session
+from app.core.deps import get_current_user
 from app.alerts.routing import get_routing
 from app.cases.workflow import InvalidTransitionError, apply_update
-from app.models.models import Agent, Alert, AlertCategory, AlertEvent, Case, CaseEvent, CaseStatus, Provider
+from app.models.models import Agent, Alert, AlertCategory, AlertEvent, Case, CaseEvent, CaseStatus, Provider, User, UserRole
 from app.schemas.schemas import AlertActionIn, AlertEventOut, AlertOut, CaseEventOut, CaseOut
 
 router = APIRouter(tags=["alerts"])
+
+
+def _in_scope(user: User, alert: Alert) -> bool:
+    if user.role == UserRole.AGENT and alert.agent_id != user.agent_id:
+        return False
+    if user.role == UserRole.PROVIDER_OPS and alert.provider_id != user.provider_id:
+        return False
+    return True
 
 
 @router.get("/alerts", response_model=list[AlertOut])
@@ -18,8 +27,14 @@ def list_alerts(
     provider_id: Optional[str] = None,
     category: Optional[AlertCategory] = None,
     limit: int = Query(50, le=200),
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
+    if current_user.role == UserRole.AGENT:
+        agent_id = current_user.agent_id
+    if current_user.role == UserRole.PROVIDER_OPS:
+        provider_id = current_user.provider_id
+
     stmt = select(Alert)
     if agent_id:
         stmt = stmt.where(Alert.agent_id == agent_id)
@@ -32,26 +47,56 @@ def list_alerts(
 
 
 @router.get("/alerts/{alert_id}", response_model=AlertOut)
-def get_alert(alert_id: int, session: Session = Depends(get_session)):
+def get_alert(
+    alert_id: int, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)
+):
     alert = session.get(Alert, alert_id)
     if not alert:
         raise HTTPException(404, "Alert not found")
+    if not _in_scope(current_user, alert):
+        raise HTTPException(403, "Not authorized to view this alert")
     return _to_alert_out(session, alert)
 
 
 @router.post("/alerts/{alert_id}/acknowledge", response_model=AlertOut)
-def acknowledge_alert(alert_id: int, body: AlertActionIn, session: Session = Depends(get_session)):
+def acknowledge_alert(
+    alert_id: int,
+    body: AlertActionIn,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    _require_action_scope(current_user, session, alert_id)
     return _apply_alert_action(session, alert_id, CaseStatus.ACKNOWLEDGED, "ACKNOWLEDGED", body)
 
 
 @router.post("/alerts/{alert_id}/escalate", response_model=AlertOut)
-def escalate_alert(alert_id: int, body: AlertActionIn, session: Session = Depends(get_session)):
+def escalate_alert(
+    alert_id: int,
+    body: AlertActionIn,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    _require_action_scope(current_user, session, alert_id)
     return _apply_alert_action(session, alert_id, CaseStatus.ESCALATED, "ESCALATED", body)
 
 
 @router.post("/alerts/{alert_id}/resolve", response_model=AlertOut)
-def resolve_alert(alert_id: int, body: AlertActionIn, session: Session = Depends(get_session)):
+def resolve_alert(
+    alert_id: int,
+    body: AlertActionIn,
+    current_user: User = Depends(get_current_user),
+    session: Session = Depends(get_session),
+):
+    _require_action_scope(current_user, session, alert_id)
     return _apply_alert_action(session, alert_id, CaseStatus.RESOLVED, "RESOLVED", body)
+
+
+def _require_action_scope(user: User, session: Session, alert_id: int) -> None:
+    alert = session.get(Alert, alert_id)
+    if not alert:
+        raise HTTPException(404, "Alert not found")
+    if not _in_scope(user, alert):
+        raise HTTPException(403, "Not authorized to update this alert")
 
 
 def _apply_alert_action(

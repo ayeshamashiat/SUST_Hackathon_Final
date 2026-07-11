@@ -4,14 +4,17 @@ import { useEffect, useState } from "react";
 import { AgentSelector } from "@/components/AgentSelector";
 import { BalanceCard } from "@/components/BalanceCard";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { formatBDT, formatRelative } from "@/lib/format";
 import type { Agent, AgentBalancesOut, ForecastOut, Transaction } from "@/lib/types";
 
 const POLL_MS = 4000;
 
 export default function DashboardPage() {
+  const { user } = useAuth();
+  const isAgentRole = user?.role === "AGENT";
   const [agents, setAgents] = useState<Agent[]>([]);
-  const [selectedAgent, setSelectedAgent] = useState<string | null>(null);
+  const [selectedAgent, setSelectedAgent] = useState<string | null>(isAgentRole ? user!.agent_id : null);
   const [balances, setBalances] = useState<AgentBalancesOut | null>(null);
   const [forecasts, setForecasts] = useState<ForecastOut[]>([]);
   const [transactions, setTransactions] = useState<Transaction[]>([]);
@@ -76,7 +79,7 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <AgentSelector agents={agents} selected={selectedAgent} onSelect={setSelectedAgent} />
+      {!isAgentRole && <AgentSelector agents={agents} selected={selectedAgent} onSelect={setSelectedAgent} />}
 
       {balances && (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">

@@ -4,7 +4,7 @@ from typing import Annotated, Optional
 from pydantic import BaseModel, ConfigDict, PlainSerializer
 
 from app.core.time import to_utc_iso
-from app.models.models import CaseStatus, ConfidenceLevel, DataQuality, FeedHealth
+from app.models.models import CaseStatus, ConfidenceLevel, DataQuality, FeedHealth, UserRole
 
 UTCDateTime = Annotated[datetime, PlainSerializer(to_utc_iso, return_type=str, when_used="json")]
 
@@ -97,7 +97,6 @@ class AlertOut(BaseModel):
 class CaseUpdateIn(BaseModel):
     status: Optional[CaseStatus] = None
     note: Optional[str] = None
-    actor: str
 
 
 class AlertActionIn(BaseModel):
@@ -109,6 +108,23 @@ class DegradeFeedIn(BaseModel):
     agent_id: str
     provider_id: str
     degrade: bool
+
+
+class UserOut(BaseModel):
+    username: str
+    role: UserRole
+    display_name: str
+    agent_id: Optional[str] = None
+    provider_id: Optional[str] = None
+
+
+class TokenOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    role: UserRole
+    display_name: str
+    agent_id: Optional[str] = None
+    provider_id: Optional[str] = None
 
 
 class ScenarioIn(BaseModel):
