@@ -63,7 +63,7 @@ function CoordinationSection() {
   return (
     <div className="space-y-3">
       <div>
-        <h2 className="text-lg font-semibold">Coordination - assigned cases</h2>
+        <h2 className="text-[15px] font-bold">Coordination - assigned cases</h2>
         <p className="text-sm text-slate-600">
           Every liquidity, anomaly, and data-quality alert is automatically assigned to a stakeholder based on
           severity and type, then walks a fixed escalation ladder (Agent → Field Officer → Provider Operations →
@@ -152,7 +152,7 @@ function EvidenceSection() {
   return (
     <div className="space-y-3">
       <div>
-        <h2 className="text-lg font-semibold">Detection evidence</h2>
+        <h2 className="text-[15px] font-bold">Detection evidence</h2>
         <p className="text-sm text-slate-600">
           Two independent, explainable checks per provider: a burst-activity detector (frequency + account
           clustering) and a per-agent historical baseline (is this transaction unusual for what this specific agent
@@ -213,7 +213,11 @@ export default function AnomalyReviewPage() {
   return (
     <div className="space-y-10">
       <div>
-        <h1 className="text-xl font-semibold mb-1">Anomaly review &amp; coordination</h1>
+        <h1 className="text-[22px] font-extrabold mb-1 tracking-tight">Alerts &amp; coordination</h1>
+        <p className="text-[13.5px] text-slate-500 max-w-[600px] leading-relaxed">
+          Every alert shows its evidence and confidence, and is routed to a named owner with a recommended next
+          step. Advisory signals for human review &mdash; never a fraud determination.
+        </p>
       </div>
       <CoordinationSection />
       <EvidenceSection />

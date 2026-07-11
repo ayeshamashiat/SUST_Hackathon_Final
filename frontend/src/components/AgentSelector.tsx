@@ -17,14 +17,14 @@ export function AgentSelector({
         <button
           key={agent.id}
           onClick={() => onSelect(agent.id)}
-          className={`rounded-lg px-3 py-2 text-sm text-left transition-colors border ${
+          className={`rounded-xl px-3 py-2 text-sm text-left transition-colors border ${
             selected === agent.id
-              ? "border-emerald-300 bg-emerald-50 text-emerald-800"
-              : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+              ? "border-accent-light bg-accent-light/40 text-accent"
+              : "border-[#E3E6EE] bg-white text-slate-700 hover:border-slate-300"
           }`}
         >
-          <div className="font-medium">{agent.name}</div>
-          <div className="text-xs text-slate-500">{agent.area}</div>
+          <div className="font-semibold text-[13px]">{agent.name}</div>
+          <div className="text-[11px] text-slate-400">{agent.area}</div>
         </button>
       ))}
     </div>

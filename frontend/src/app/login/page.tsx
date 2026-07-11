@@ -33,18 +33,26 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="mx-auto max-w-sm mt-16">
-      <div className="rounded-xl border border-slate-200 bg-white p-6 space-y-5">
-        <div>
-          <h1 className="text-lg font-semibold">Super Agent Console</h1>
-          <p className="text-sm text-slate-600 mt-1">
-            Sign in with your operations-team login. Customers do not use this console.
-          </p>
+    <div className="w-[380px]">
+      <div className="rounded-[24px] border border-[#E8EAF0] bg-white p-9 shadow-[0_20px_40px_-24px_rgba(18,20,28,0.15)]">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-11 h-11 rounded-xl bg-accent-ink flex items-center justify-center shrink-0">
+            <div className="w-[18px] h-[18px] rounded-[5px] bg-accent-light" />
+          </div>
+          <div>
+            <div className="font-extrabold text-[15px] leading-tight">SUPER AGENT</div>
+            <div className="font-semibold text-[11px] tracking-[0.14em] text-slate-400">CONSOLE</div>
+          </div>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-3">
+        <h1 className="text-xl font-bold mb-1.5">Sign in</h1>
+        <p className="text-[13px] text-slate-500 mb-6 leading-relaxed">
+          Operations-team login only. Customers do not use this console.
+        </p>
+
+        <form onSubmit={handleSubmit} className="space-y-3.5">
           <div>
-            <label className="block text-xs text-slate-500 mb-1" htmlFor="username">
+            <label className="block text-xs text-slate-500 mb-1.5" htmlFor="username">
               Username
             </label>
             <input
@@ -52,12 +60,13 @@ export default function LoginPage() {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               autoComplete="username"
-              className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm"
+              placeholder="rafiq.officer"
+              className="w-full rounded-[10px] border border-[#E3E6EE] bg-[#FAFBFD] px-3 py-2.5 text-sm"
               required
             />
           </div>
           <div>
-            <label className="block text-xs text-slate-500 mb-1" htmlFor="password">
+            <label className="block text-xs text-slate-500 mb-1.5" htmlFor="password">
               Password
             </label>
             <input
@@ -66,7 +75,8 @@ export default function LoginPage() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password"
-              className="w-full rounded border border-slate-300 bg-white px-3 py-2 text-sm"
+              placeholder="••••••••"
+              className="w-full rounded-[10px] border border-[#E3E6EE] bg-[#FAFBFD] px-3 py-2.5 text-sm"
               required
             />
           </div>
@@ -76,15 +86,15 @@ export default function LoginPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full rounded-lg bg-emerald-700 px-3 py-2 text-sm font-medium text-white hover:bg-emerald-800 disabled:opacity-50"
+            className="w-full mt-1.5 rounded-xl bg-accent-ink px-3 py-3 text-sm font-semibold text-white hover:bg-[#272A36] transition-colors disabled:opacity-50"
           >
             {submitting ? "Signing in..." : "Log in"}
           </button>
         </form>
 
-        <p className="text-xs text-slate-400">
-          Predetermined operations-hierarchy accounts only - see{" "}
-          <code className="text-slate-500">docs/CREDENTIALS.md</code> for demo credentials.
+        <p className="text-[11px] text-slate-400 mt-5 leading-relaxed">
+          Predetermined operations-hierarchy accounts only &middot; demo credentials via{" "}
+          <code className="text-slate-500">docs/CREDENTIALS.md</code>
         </p>
       </div>
     </div>

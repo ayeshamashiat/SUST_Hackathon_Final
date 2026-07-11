@@ -2,7 +2,7 @@ import type { CaseStatus, ConfidenceLevel, Severity, SyncStatus, UserRole } from
 
 function badge(className: string, label: string) {
   return (
-    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${className}`}>
+    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10.5px] font-bold ${className}`}>
       {label}
     </span>
   );

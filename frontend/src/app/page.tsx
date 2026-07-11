@@ -50,8 +50,8 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-xl font-semibold mb-1">Unified outlet view</h1>
-        <p className="text-sm text-slate-600">
+        <h1 className="text-[22px] font-extrabold mb-1 tracking-tight">Unified outlet view</h1>
+        <p className="text-[13.5px] text-slate-500 max-w-[560px] leading-relaxed">
           One shared cash drawer, three separate provider balances. Cash is a derived, read-only figure computed
           from synced transaction history - not an authoritative provider balance, and nothing here merges provider
           funds.
@@ -88,7 +88,7 @@ export default function DashboardPage() {
             ))}
           </div>
 
-          <div className="rounded-xl border border-slate-200 bg-white px-4 py-3 flex items-center justify-between gap-4 text-sm">
+          <div className="rounded-2xl border border-[#E8EAF0] bg-white px-4 py-3 flex items-center justify-between gap-4 text-sm">
             <span className="text-slate-600">Overall confidence for this agent</span>
             <ConfidenceBadge level={aggregate.overall_confidence} />
           </div>
