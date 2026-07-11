@@ -1,0 +1,59 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_SUPERUSER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:-postgres}
+      BKASH_DB_PASSWORD: ${BKASH_DB_PASSWORD:-bkash_pw}
+      NAGAD_DB_PASSWORD: ${NAGAD_DB_PASSWORD:-nagad_pw}
+      ROCKET_DB_PASSWORD: ${ROCKET_DB_PASSWORD:-rocket_pw}
+      SHARED_DB_PASSWORD: ${SHARED_DB_PASSWORD:-shared_pw}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./db-init:/docker-entrypoint-initdb.d:ro
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_SUPERUSER:-postgres}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Not exposed to the frontend. Owns bkash_db/nagad_db/rocket_db access and
+  # (from Phase 2 on) the /simulator router. Only aggregator-api talks to it,
+  # over the internal compose network.
+  provider-api:
+    build: ./provider-api
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8001:8000"  # dev-only convenience; not required by the frontend
+
+  # Not exposed to the frontend. Polls the three provider databases directly
+  # and projects into shared_db. Never talks to provider-api over HTTP.
+  sync-service:
+    build: ./sync-service
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8002:8000"  # dev-only convenience; not required by the frontend
+
+  # The only service the frontend talks to (matches its existing
+  # NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 default). Reads shared_db
+  # only; proxies /simulation/* to provider-api's /simulator router
+  # internally so the frontend needs zero changes.
+  aggregator-api:
+    build: ./aggregator-api
+    env_file: .env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "8000:8000"
+
+volumes:
+  pgdata:

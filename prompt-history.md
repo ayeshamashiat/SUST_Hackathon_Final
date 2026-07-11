@@ -285,3 +285,88 @@ Exit check:
 - Full Section 16 checklist satisfied.
 - Final presentation is ready
 
+## Refactor Log
+
+> Entries below follow the mandated Date / Prompt / Summary / Files format
+> introduced when the permanent development rules (incremental phases,
+> prompt logging, no unapproved destructive actions, etc.) were adopted.
+> Earlier sections above are the original planning document and are left
+> untouched.
+
+### 2026-07-11 — Refactor to Docker Compose / provider-separated architecture
+
+**Prompt**: Refactor the existing single-process FastAPI + SQLite backend
+(built across the sessions logged above) into a simpler multi-service
+architecture: one Postgres container with four databases (`bkash_db`,
+`nagad_db`, `rocket_db`, `shared_db`); one `provider-api` FastAPI app with
+`/bkash`, `/nagad`, `/rocket`, `/simulator` routers, each router touching only
+its own database; one `sync-service` that polls providers and populates
+`shared_db` as a read-only projection; one `aggregator-api` that reads only
+`shared_db` and hosts the alert engine, forecast engine, anomaly detector, and
+a new `services/llm.py` OpenAI abstraction (mock + live mode) as internal
+modules, not separate services. Explicit instruction to inspect the current
+codebase first, explain what exists/changes/can be reused/should be removed,
+and wait for confirmation before writing any code; work one phase at a time.
+
+**Summary**: Inspected the entire existing backend (models, analytics,
+alerts, cases, simulation, API routers, tests) and reported back: almost all
+business logic (`forecaster.py`, `anomaly.py`, `alerts/engine.py`,
+`routing.py`, `templates.py`, `cases/workflow.py`, the `agents`/`alerts`/
+`cases` routers) can move into `aggregator-api` unchanged, just repointed at
+Postgres. Flagged three open design gaps the instructions didn't resolve:
+who owns the shared `CashDrawer` (not provider data — no provider DB is a
+natural home for it), whether `sync-service` polls providers over HTTP or
+connects to their databases directly, and how the frontend (single origin,
+port 8000 today) stays compatible once the backend splits into three
+services. No code changed in this turn — pure inspection and a proposed
+6-phase plan (infra → move modules → sync-service → rewire aggregator →
+LLM abstraction → full verification + docs), logged as tracked tasks.
+
+**Files modified**: None (analysis only).
+
+---
+
+### 2026-07-11 — Resolve open design questions, begin Phase 1
+
+**Prompt**: Use the hackathon problem statement as the source of truth to
+decide who owns `CashDrawer`; make the pragmatic call on the other two open
+questions rather than re-asking; keep the result frontend-compatible.
+
+**Summary**: Re-read the problem statement's framing of physical cash
+("agent has one physical cash drawer," never described as provider-visible
+data) and concluded `CashDrawer` is agent-reported ground truth that was
+never meant to flow through the provider-sync pipeline — it lives in
+`shared_db` but is the one table there written directly by `provider-api`'s
+`/simulator` router, not by `sync-service`. Settled the other two gaps:
+`sync-service` connects directly to each provider Postgres database with its
+own restricted credentials (no HTTP hop through `provider-api`); `aggregator-
+api` stays the only host-exposed service (port 8000, matching the frontend's
+existing `NEXT_PUBLIC_API_BASE_URL` default), with `/simulation/*` becoming
+an internal proxy to `provider-api`'s `/simulator` router so the frontend
+needs zero changes. Built and verified Phase 1 (infra only, no business logic
+moved yet): `docker-compose.yml` (postgres + provider-api + sync-service +
+aggregator-api), `db-init/init-databases.sh` (creates the 4 databases + one
+restricted role per database), `.env.example`, and health-check-only FastAPI
+skeletons for the three new services. Verified end-to-end: all containers
+built and reported healthy, every `/health` endpoint responded, and the
+provider-boundary guarantee was proven directly against Postgres — the
+`bkash_service` role gets `permission denied for database "nagad_db"` when
+it tries to connect to Nagad's database, and `shared_service` likewise cannot
+reach `bkash_db`. Verification ran on a temporary alternate port (8010)
+because the pre-existing single-process backend was still running and bound
+to 8000; the compose file was reverted to the intended `8000:8000` mapping
+afterward and the verification stack was torn down. The old
+`backend/app/`, `sust_hackathon.db`, and `venv/` were not touched. Added
+`docs/deployment.md` documenting the new Docker workflow, env vars, startup
+sequence, and troubleshooting (including the port-8000-conflict situation
+just hit).
+
+**Files modified**:
+- `backend/docker-compose.yml` (new)
+- `backend/.env.example` (new)
+- `backend/db-init/init-databases.sh` (new)
+- `backend/provider-api/{Dockerfile,requirements.txt,app/main.py,app/__init__.py}` (new)
+- `backend/sync-service/{Dockerfile,requirements.txt,app/main.py,app/__init__.py}` (new)
+- `backend/aggregator-api/{Dockerfile,requirements.txt,app/main.py,app/__init__.py}` (new)
+- `docs/deployment.md` (new)
+
