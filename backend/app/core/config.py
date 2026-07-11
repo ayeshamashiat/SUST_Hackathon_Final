@@ -6,6 +6,10 @@ lookback windows) are easy to find and explain to judges.
 
 DATABASE_URL = "sqlite:///./sust_hackathon.db"
 
+# Narratives are deterministic templates by default.  Live model access is
+# deliberately disabled until a maintainer explicitly enables and configures it.
+LLM_MODE = "mock"
+
 # --- Simulation ---
 TICK_SECONDS = 4.0
 CASH_SAFETY_THRESHOLD = 5_000.0

@@ -23,6 +23,9 @@ The service runs at `http://localhost:8000`. On startup it initializes SQLite, s
 - `GET /agents/{agent_id}/transactions`
 - `GET /alerts`
 - `GET /alerts/{alert_id}`
+- `POST /alerts/{alert_id}/acknowledge`
+- `POST /alerts/{alert_id}/escalate`
+- `POST /alerts/{alert_id}/resolve`
 - `GET /cases/{case_id}`
 - `PATCH /cases/{case_id}`
 - `GET /simulation/status`

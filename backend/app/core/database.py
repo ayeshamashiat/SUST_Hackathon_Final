@@ -1,3 +1,4 @@
+from sqlalchemy import inspect, text
 from sqlmodel import SQLModel, Session, create_engine
 
 from app.core.config import DATABASE_URL
@@ -9,6 +10,12 @@ def init_db() -> None:
     from app import models  # noqa: F401  (ensure models are registered)
 
     SQLModel.metadata.create_all(engine)
+    # SQLite has no automatic ALTER support in SQLModel's create_all(). Keep
+    # existing local demo databases usable while adding Banglish narration.
+    columns = {column["name"] for column in inspect(engine).get_columns("alert")}
+    if "message_banglish" not in columns:
+        with engine.begin() as connection:
+            connection.execute(text("ALTER TABLE alert ADD COLUMN message_banglish TEXT NOT NULL DEFAULT ''"))
 
 
 def get_session():

@@ -122,6 +122,7 @@ class Alert(SQLModel, table=True):
     title: str
     message_en: str
     message_bn: str
+    message_banglish: str = ""
     evidence: dict = Field(default_factory=dict, sa_column=Column(JSON))
     confidence: ConfidenceLevel
     confidence_note: str
@@ -146,4 +147,21 @@ class CaseEvent(SQLModel, table=True):
     event_type: str  # CREATED / ACKNOWLEDGED / STATUS_CHANGED / NOTE / ESCALATED / RESOLVED
     note: Optional[str] = None
     actor: str
+    created_at: datetime = Field(default_factory=utcnow)
+
+
+class AlertEvent(SQLModel, table=True):
+    """Alert-level audit record for lifecycle actions.
+
+    CaseEvent remains the detailed case workflow log.  AlertEvent is kept at
+    the alert boundary so clients can audit acknowledge/escalate/resolve
+    actions without inferring them from an implementation-specific case.
+    """
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    alert_id: int = Field(foreign_key="alert.id", index=True)
+    event_type: str  # CREATED / ACKNOWLEDGED / ESCALATED / RESOLVED
+    actor: str
+    note: Optional[str] = None
+    owner_role: Optional[str] = None
     created_at: datetime = Field(default_factory=utcnow)
