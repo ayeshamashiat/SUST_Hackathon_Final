@@ -676,3 +676,48 @@ credential at all after the compose fix.
 **Files modified**: `backend/docker-compose.yml` (env allow-lists),
 `docs/deployment.md` (documents the env-scoping fix).
 
+---
+
+### 2026-07-11 — SonarQube + CI/CD pipeline
+
+**Prompt**: Analyze every commit with SonarQube; run SonarQube in Docker,
+wired into a CI/CD pipeline.
+
+**Summary**: Explained CI/CD and SonarQube in beginner terms first, per the
+standing rules, then surfaced the one real architectural constraint before
+building anything: GitHub Actions runs on temporary cloud machines with no
+network path to a Docker container on this laptop, so "SonarQube in Docker"
+and "analyzed on every commit via CI" can't be the same running instance.
+Asked the user to choose between SonarCloud (hosted, persistent dashboard,
+needs a free external signup), an ephemeral Docker-in-CI scan (self
+contained, no persistent history), or local-only (no CI yet). User chose
+**SonarCloud**.
+
+Built: `sonarqube/docker-compose.yml` (local, persistent SonarQube +
+its own Postgres, for scanning on-demand from this machine - independent of
+CI, satisfies the literal "Docker" requirement); `sonar-project.properties`
+at repo root (shared by both the local scanner and CI, with placeholder
+`sonar.projectKey`/`sonar.organization` the user must replace with their
+real SonarCloud project's values); `.github/workflows/sonarcloud.yml`
+(triggers on every push and PR, uses the official `SonarSource/
+sonarqube-scan-action`, authenticates via a `SONAR_TOKEN` GitHub secret);
+`docs/sonarqube.md` (explains the two-target split, local usage, the
+one-time SonarCloud account/token/secret setup the user has to do
+themselves since it requires their own external credentials, what the CI
+workflow does step by step, and troubleshooting).
+
+Verified: both `sonarqube/docker-compose.yml` and `.github/workflows/
+sonarcloud.yml` parse as valid YAML/compose config. Confirmed the host's
+`vm.max_map_count` (1048576) is already well above SonarQube's Elasticsearch
+minimum (262144), so no host-level sysctl change was needed. **Could not
+fully verify the local SonarQube container live**: the `sonarqube:community`
+image pull ran unusually slowly in this environment (confirmed via network
+byte-delta sampling that it was genuinely transferring, not stalled) and had
+not finished after roughly 25 minutes; left it running in the background
+rather than continuing to block on it. CI cannot be verified at all without
+the user completing the SonarCloud signup + `SONAR_TOKEN` secret step
+themselves (external account, not something achievable from this session).
+
+**Files added**: `sonarqube/docker-compose.yml`, `sonar-project.properties`,
+`.github/workflows/sonarcloud.yml`, `docs/sonarqube.md`.
+

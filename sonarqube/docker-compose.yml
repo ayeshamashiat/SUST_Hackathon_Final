@@ -1,42 +1,55 @@
-services:
-  postgres:
-    image: postgres:16
-    container_name: sonarqube-postgres
+# Local, persistent SonarQube - for scanning on your own machine whenever
+# you want, with a real dashboard you can click around in. This is separate
+# from CI: GitHub Actions runs on a temporary cloud machine with no network
+# path to a container on your laptop, so the CI pipeline (.github/workflows/
+# sonarcloud.yml) sends its analysis to SonarCloud instead. This local
+# instance and SonarCloud are two independent SonarQube-family targets; they
+# do not sync with each other.
+#
+# Usage: from the repo root,
+#   docker compose -f sonarqube/docker-compose.yml up -d
+# then open http://localhost:9000 (default login admin/admin, you'll be
+# asked to change it on first login).
 
+services:
+  sonarqube-db:
+    image: postgres:16-alpine
     environment:
       POSTGRES_USER: sonar
-      POSTGRES_PASSWORD: sonar
+      POSTGRES_PASSWORD: ${SONARQUBE_DB_PASSWORD:-sonar_pw}
       POSTGRES_DB: sonarqube
-
     volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-    restart: unless-stopped
+      - sonar_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sonar"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   sonarqube:
-    image: sonarqube:lts-community
-    container_name: sonarqube
-
+    image: sonarqube:community
     depends_on:
-      - postgres
-
+      sonarqube-db:
+        condition: service_healthy
+    environment:
+      SONAR_JDBC_URL: jdbc:postgresql://sonarqube-db:5432/sonarqube
+      SONAR_JDBC_USERNAME: sonar
+      SONAR_JDBC_PASSWORD: ${SONARQUBE_DB_PASSWORD:-sonar_pw}
     ports:
       - "9000:9000"
-
-    environment:
-      SONAR_JDBC_URL: jdbc:postgresql://postgres:5432/sonarqube
-      SONAR_JDBC_USERNAME: sonar
-      SONAR_JDBC_PASSWORD: sonar
-
     volumes:
-      - sonarqube_data:/opt/sonarqube/data
-      - sonarqube_extensions:/opt/sonarqube/extensions
-      - sonarqube_logs:/opt/sonarqube/logs
-
-    restart: unless-stopped
+      - sonar_data:/opt/sonarqube/data
+      - sonar_extensions:/opt/sonarqube/extensions
+      - sonar_logs:/opt/sonarqube/logs
+    # SonarQube's embedded Elasticsearch needs these raised - if you ever see
+    # it fail to start with a "max virtual memory areas" error, this is why.
+    ulimits:
+      nofile:
+        soft: 65536
+        hard: 65536
 
 volumes:
-  postgres_data:
-  sonarqube_data:
-  sonarqube_extensions:
-  sonarqube_logs:
+  sonar_db_data:
+  sonar_data:
+  sonar_extensions:
+  sonar_logs:
