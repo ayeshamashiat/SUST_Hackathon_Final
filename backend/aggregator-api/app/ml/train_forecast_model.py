@@ -1,7 +1,7 @@
 """Offline training script for the liquidity forecasting model - additive
 to (never a replacement for) the statistical trend detector in
 services/forecast.py; this only supplies a second, ML-based number that
-services/alerts.py surfaces alongside the existing rule-based evidence.
+cases/engine.py surfaces alongside the existing rule-based evidence.
 
 Usage (container already running):
     docker compose exec aggregator-api python -m app.ml.train_forecast_model

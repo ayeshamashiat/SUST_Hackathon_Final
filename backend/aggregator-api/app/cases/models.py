@@ -79,6 +79,15 @@ class Alert(SQLModel, table=True):
     message_banglish: str = ""
     recommended_action: str
 
+    # --- Phase 8: additive AI-generated recommendation (services/llm.py) -
+    # never changes alert_type/severity/current_owner above, which are all
+    # decided by the rule-based detectors and routing.py before this even
+    # runs. None for alert types llm.py doesn't cover yet (e.g. DATA_QUALITY),
+    # or if the recommendation text hasn't been computed for some reason.
+    ai_recommendation: Optional[str] = None
+    ai_recommendation_source: Optional[str] = None  # "ai" | "fallback"
+    ai_recommendation_note: Optional[str] = None
+
     # --- ownership + lifecycle (the assignment loop) ---
     current_owner: UserRole
     current_status: CaseStatus = CaseStatus.NEW

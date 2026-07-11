@@ -137,3 +137,23 @@ def recommend_anomaly(agent_name: str, provider: str, anomaly_result, fallback_t
         f"Evidence (JSON): {json.dumps(evidence)}"
     )
     return _call(prompt, fallback_text)
+
+
+def recommend_amount_outlier(agent_name: str, provider: str, result, fallback_text: str) -> AIRecommendation:
+    evidence = {
+        "agent": agent_name,
+        "provider": provider,
+        "transaction_type": result.transaction_type,
+        "evaluated_amount_bdt": result.evaluated_amount,
+        "historical_mean_bdt": result.historical_mean,
+        "historical_stdev_bdt": result.historical_stdev,
+        "historical_sample_size": result.historical_sample_size,
+        "z_score": round(result.z_score, 2) if result.z_score is not None else None,
+        "confidence": result.confidence.value,
+    }
+    prompt = (
+        "Category: single-transaction amount outlier, evaluated against THIS agent's own historical pattern "
+        "(NOT a fraud determination).\n"
+        f"Evidence (JSON): {json.dumps(evidence)}"
+    )
+    return _call(prompt, fallback_text)

@@ -9,6 +9,7 @@ evidence cross the threshold for an alert, and who should own it."
 """
 
 import logging
+from dataclasses import asdict
 from datetime import datetime, timedelta
 from typing import Optional
 
@@ -20,12 +21,15 @@ from app.cases.models import Alert, AlertType, CaseEvent, CaseStatus, Severity
 from app.cases.routing import assign_initial_owner, recommended_action
 from app.config import (
     ALERT_REOPEN_COOLDOWN_MINUTES,
+    CASH_SAFETY_THRESHOLD,
     LIQUIDITY_HIGH_SEVERITY_MINUTES,
     LIQUIDITY_MEDIUM_SEVERITY_MINUTES,
+    PROVIDER_SAFETY_THRESHOLD,
 )
 from app.models import ProviderBalance, SyncStatus
 from app.services import anomaly as anomaly_service
 from app.services import forecast as forecast_service
+from app.services import llm, ml_forecast
 from app.services.cash import PROVIDERS
 from app.services.confidence import ConfidenceLevel
 
@@ -72,6 +76,7 @@ def _create_alert(
     message_bn: str,
     message_banglish: str,
     now: datetime,
+    ai_recommendation=None,
 ) -> Alert:
     owner = assign_initial_owner(alert_type, severity)
     alert = Alert(
@@ -92,6 +97,9 @@ def _create_alert(
         current_status=CaseStatus.ASSIGNED,
         created_at=now,
         updated_at=now,
+        ai_recommendation=ai_recommendation.text if ai_recommendation is not None else None,
+        ai_recommendation_source=ai_recommendation.source if ai_recommendation is not None else None,
+        ai_recommendation_note=ai_recommendation.note if ai_recommendation is not None else None,
     )
     session.add(alert)
     session.commit()
@@ -122,6 +130,10 @@ def evaluate_agent(shared_session: Session, agg_session: Session, agent_id: str,
         agg_session, agent_id, None, AlertType.LIQUIDITY, "cash_burn_rate", now
     ):
         title, en, bn, banglish = narratives.liquidity_narrative(agent_id, cash_forecast)
+        ml_prediction = ml_forecast.predict(
+            shared_session, agent_id, "CASH", cash_forecast.current_balance, CASH_SAFETY_THRESHOLD, now=now
+        )
+        ai_recommendation = llm.recommend_liquidity(agent_id, cash_forecast, en, ml_prediction=ml_prediction)
         created.append(
             _create_alert(
                 agg_session,
@@ -140,12 +152,14 @@ def evaluate_agent(shared_session: Session, agg_session: Session, agent_id: str,
                     if cash_forecast.projected_shortage_at
                     else None,
                     "top_contributors": cash_forecast.top_contributors,
+                    "ml_prediction": asdict(ml_prediction) if ml_prediction is not None else None,
                 },
                 title=title,
                 message_en=en,
                 message_bn=bn,
                 message_banglish=banglish,
                 now=now,
+                ai_recommendation=ai_recommendation,
             )
         )
 
@@ -157,6 +171,10 @@ def evaluate_agent(shared_session: Session, agg_session: Session, agent_id: str,
         ):
             continue
         title, en, bn, banglish = narratives.liquidity_narrative(agent_id, pf)
+        ml_prediction = ml_forecast.predict(
+            shared_session, agent_id, provider, pf.current_balance, PROVIDER_SAFETY_THRESHOLD, now=now
+        )
+        ai_recommendation = llm.recommend_liquidity(agent_id, pf, en, ml_prediction=ml_prediction)
         created.append(
             _create_alert(
                 agg_session,
@@ -172,12 +190,14 @@ def evaluate_agent(shared_session: Session, agg_session: Session, agent_id: str,
                     "burn_rate_per_minute": pf.burn_rate_per_minute,
                     "minutes_to_shortage": pf.minutes_to_shortage,
                     "projected_shortage_at": pf.projected_shortage_at.isoformat() if pf.projected_shortage_at else None,
+                    "ml_prediction": asdict(ml_prediction) if ml_prediction is not None else None,
                 },
                 title=title,
                 message_en=en,
                 message_bn=bn,
                 message_banglish=banglish,
                 now=now,
+                ai_recommendation=ai_recommendation,
             )
         )
 
@@ -190,6 +210,7 @@ def evaluate_agent(shared_session: Session, agg_session: Session, agent_id: str,
             continue
         severity = Severity.HIGH if result.z_score is not None and result.z_score >= 4.0 else Severity.MEDIUM
         title, en, bn, banglish = narratives.anomaly_velocity_narrative(agent_id, provider, result)
+        ai_recommendation = llm.recommend_anomaly(agent_id, provider, result, en)
         created.append(
             _create_alert(
                 agg_session,
@@ -216,6 +237,7 @@ def evaluate_agent(shared_session: Session, agg_session: Session, agent_id: str,
                 message_bn=bn,
                 message_banglish=banglish,
                 now=now,
+                ai_recommendation=ai_recommendation,
             )
         )
 
@@ -228,6 +250,7 @@ def evaluate_agent(shared_session: Session, agg_session: Session, agent_id: str,
             continue
         severity = Severity.HIGH if result.z_score is not None and result.z_score >= 4.5 else Severity.MEDIUM
         title, en, bn, banglish = narratives.amount_outlier_narrative(agent_id, provider, result)
+        ai_recommendation = llm.recommend_amount_outlier(agent_id, provider, result, en)
         created.append(
             _create_alert(
                 agg_session,
@@ -251,6 +274,7 @@ def evaluate_agent(shared_session: Session, agg_session: Session, agent_id: str,
                 message_bn=bn,
                 message_banglish=banglish,
                 now=now,
+                ai_recommendation=ai_recommendation,
             )
         )
 

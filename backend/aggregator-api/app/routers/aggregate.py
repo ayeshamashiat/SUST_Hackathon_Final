@@ -5,16 +5,7 @@ from app.auth.deps import get_current_user
 from app.auth.models import User, UserRole
 from app.db import get_shared_db
 from app.models import ProviderBalance
-from app.schemas import (
-    AgentAggregateOut,
-    AIRecommendationOut,
-    AlertOut,
-    AmountOutlierOut,
-    AnomalyOut,
-    ForecastOut,
-    ProviderBalanceOut,
-)
-from app.services import alerts as alerts_service
+from app.schemas import AgentAggregateOut, AmountOutlierOut, AnomalyOut, ForecastOut, ProviderBalanceOut
 from app.services import anomaly as anomaly_service
 from app.services import forecast as forecast_service
 from app.services.cash import PROVIDERS, evaluate_cash
@@ -166,46 +157,6 @@ def get_agent_anomalies(
             window_end=r.window_end,
             confidence=r.confidence,
             message=r.message,
-        )
-        for r in results
-    ]
-
-
-@router.get("/alerts/{agent_id}", response_model=list[AlertOut])
-def get_agent_alerts(agent_id: str, session: Session = Depends(get_shared_db)):
-    """Layers a routed recommendation - rule-based action plus an additive
-    AI-generated one (services/llm.py) - on top of forecast_cash/
-    forecast_provider/detect_velocity_and_clustering exactly as they already
-    run for /forecast and /anomaly above. Nothing about whether something is
-    flagged changes here; this only decides what to say once it is."""
-    exists = any(
-        session.exec(
-            select(ProviderBalance).where(ProviderBalance.agent_id == agent_id, ProviderBalance.provider == p)
-        ).one_or_none()
-        for p in PROVIDERS
-    )
-    if not exists:
-        raise HTTPException(404, f"Agent '{agent_id}' not found - no provider has ever synced data for it")
-
-    results = alerts_service.build_alerts(session, agent_id)
-    return [
-        AlertOut(
-            category=r.category,
-            metric=r.metric,
-            severity=r.severity,
-            agent_id=r.agent_id,
-            provider=r.provider,
-            title=r.title,
-            message=r.message,
-            evidence=r.evidence,
-            confidence=r.confidence,
-            confidence_note=r.confidence_note,
-            recommended_action=r.recommended_action,
-            ai_recommendation=AIRecommendationOut(
-                text=r.ai_recommendation.text,
-                source=r.ai_recommendation.source,
-                note=r.ai_recommendation.note,
-            ),
         )
         for r in results
     ]

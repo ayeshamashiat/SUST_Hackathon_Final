@@ -15,7 +15,7 @@ from app.auth.models import User, UserRole
 from app.cases import workflow
 from app.cases.models import Alert, AlertType, CaseEvent, CaseStatus
 from app.db import get_aggregator_db
-from app.schemas import AddNoteIn, AlertActionIn, AlertOut, CaseEventOut, EscalateIn
+from app.schemas import AddNoteIn, AIRecommendationOut, AlertActionIn, AlertOut, CaseEventOut, EscalateIn
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
@@ -87,6 +87,15 @@ def _to_alert_out(session: Session, alert: Alert) -> AlertOut:
         message_bn=alert.message_bn,
         message_banglish=alert.message_banglish,
         recommended_action=alert.recommended_action,
+        ai_recommendation=(
+            AIRecommendationOut(
+                text=alert.ai_recommendation,
+                source=alert.ai_recommendation_source,
+                note=alert.ai_recommendation_note,
+            )
+            if alert.ai_recommendation is not None
+            else None
+        ),
         current_owner=alert.current_owner,
         current_status=alert.current_status,
         created_at=alert.created_at,
