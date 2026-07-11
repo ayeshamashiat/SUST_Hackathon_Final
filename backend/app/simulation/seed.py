@@ -1,3 +1,5 @@
+import os
+
 from sqlmodel import Session, select
 
 from app.core.security import hash_password
@@ -6,7 +8,7 @@ from app.simulation.profiles import AGENT_PROFILES, PROVIDERS
 
 # Predetermined operations-hierarchy logins (Section 5 of the brief). No self-registration
 # and no customer accounts - see docs/CREDENTIALS.md for the full table shared with demo users.
-DEMO_PASSWORD = "Passw0rd!"
+DEMO_LOGIN_CODE = os.environ.get("DEMO_LOGIN_CODE", "Passw0rd!")
 
 _USER_SEEDS: list[dict] = [
     *[
@@ -81,7 +83,7 @@ def seed(session: Session) -> None:
 
 
 def seed_users(session: Session) -> None:
-    password_hash = hash_password(DEMO_PASSWORD)
+    password_hash = hash_password(DEMO_LOGIN_CODE)
     for spec in _USER_SEEDS:
         session.add(User(password_hash=password_hash, **spec))
     session.commit()

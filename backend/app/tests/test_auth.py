@@ -6,7 +6,7 @@ from sqlmodel import Session, SQLModel, create_engine
 from app.core.database import get_session
 from app.main import app
 from app.models.models import Alert, AlertCategory, Case, CaseStatus, ConfidenceLevel, DataQuality
-from app.simulation.seed import DEMO_PASSWORD, seed
+from app.simulation.seed import DEMO_LOGIN_CODE, seed
 
 # NOTE: TestClient is intentionally *not* used as a context manager here, so the app's
 # lifespan (real-DB seeding + background simulation loop) never runs - only the
@@ -37,8 +37,8 @@ def client(engine):
     app.dependency_overrides.clear()
 
 
-def _login(client, username, password=DEMO_PASSWORD):
-    return client.post("/auth/login", data={"username": username, "password": password})
+def _login(client, username, login_code=DEMO_LOGIN_CODE):
+    return client.post("/auth/login", data={"username": username, "password": login_code})
 
 
 def _auth_headers(client, username):
@@ -86,7 +86,7 @@ def test_login_success_returns_role_and_token(client):
 
 
 def test_login_wrong_password_rejected(client):
-    resp = _login(client, "field.officer", password="wrong")
+    resp = _login(client, "field.officer", login_code="wrong")
     assert resp.status_code == 401
 
 
