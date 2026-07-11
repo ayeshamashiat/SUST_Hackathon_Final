@@ -5,6 +5,7 @@ from app.core.database import get_session
 from app.models.models import Agent, DataFeedStatus
 from app.schemas.schemas import DegradeFeedIn
 from app.simulation import engine as sim_engine
+from app.simulation.seed import is_seeded, seed
 
 router = APIRouter(prefix="/simulation", tags=["simulation"])
 
@@ -18,6 +19,14 @@ def status(session: Session = Depends(get_session)):
         "agent_count": len(agents),
         "degraded_feeds": [{"agent_id": f.agent_id, "provider_id": f.provider_id} for f in feeds if f.frozen],
     }
+
+
+@router.post("/seed")
+def seed_data(session: Session = Depends(get_session)):
+    if is_seeded(session):
+        return {"status": "already_seeded"}
+    seed(session)
+    return {"status": "seeded"}
 
 
 @router.post("/reset")

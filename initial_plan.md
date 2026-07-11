@@ -147,6 +147,6 @@ Deliverables (final): all Section 10 items complete — working prototype, sourc
 
 ## Progress log
 
-- **Pass 1**: _not started yet — update this section when Pass 1 ships._
+- **Pass 1**: shipped MVP loop end-to-end — FastAPI + SQLModel/SQLite models, startup seed/reset/seed/degrade simulation controls, background Eid-rush transaction generator, EWMA-style liquidity forecaster, velocity-spike anomaly detector, careful-language alert templates, static routing, case ownership/status workflow, stale-feed confidence downgrade, REST endpoints, CORS for local Next.js, dashboard, alerts/cases page, setup READMEs, `docs/DATA_SIMULATION.md`, and pytest coverage for forecaster/anomaly/routing/cases. Verified with `python -m pytest app/tests` and `npm run build`.
 - **Pass 2**: _pending._
 - **Pass 3**: _pending._
