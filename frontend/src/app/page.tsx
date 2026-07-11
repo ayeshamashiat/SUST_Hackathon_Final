@@ -1,13 +1,16 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ActiveAlerts } from "@/components/ActiveAlerts";
 import { AgentSelector } from "@/components/AgentSelector";
 import { BalanceCard } from "@/components/BalanceCard";
 import { ConfidenceBadge } from "@/components/Badges";
+import { CashTrendChart } from "@/components/CashTrendChart";
+import { TransactionStream } from "@/components/TransactionStream";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { AGENTS, PROVIDER_COLOR, PROVIDER_LABEL, type ProviderId } from "@/lib/agents";
-import type { AgentAggregateOut, ForecastOut } from "@/lib/types";
+import type { AgentAggregateOut, AlertOut, CashTrendPointOut, ForecastOut, TransactionOut } from "@/lib/types";
 
 const POLL_MS = 5000;
 
@@ -17,6 +20,9 @@ export default function DashboardPage() {
   const [selectedAgent, setSelectedAgent] = useState<string | null>(isAgentRole ? user!.agent_id : AGENTS[0]?.id ?? null);
   const [aggregate, setAggregate] = useState<AgentAggregateOut | null>(null);
   const [forecasts, setForecasts] = useState<ForecastOut[]>([]);
+  const [transactions, setTransactions] = useState<TransactionOut[]>([]);
+  const [cashTrend, setCashTrend] = useState<CashTrendPointOut[]>([]);
+  const [alerts, setAlerts] = useState<AlertOut[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -25,10 +31,19 @@ export default function DashboardPage() {
 
     async function refresh() {
       try {
-        const [agg, fc] = await Promise.all([api.getAgentAggregate(selectedAgent!), api.getForecast(selectedAgent!)]);
+        const [agg, fc, txns, trend, alertList] = await Promise.all([
+          api.getAgentAggregate(selectedAgent!),
+          api.getForecast(selectedAgent!),
+          api.getTransactions(selectedAgent!),
+          api.getCashTrend(selectedAgent!),
+          api.getAlerts({ agentId: selectedAgent! }),
+        ]);
         if (!cancelled) {
           setAggregate(agg);
           setForecasts(fc);
+          setTransactions(txns);
+          setCashTrend(trend);
+          setAlerts(alertList);
           setError(null);
         }
       } catch (e) {
@@ -49,13 +64,17 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-[22px] font-extrabold mb-1 tracking-tight">Unified outlet view</h1>
-        <p className="text-[13.5px] text-slate-500 max-w-[560px] leading-relaxed">
-          One shared cash drawer, three separate provider balances. Cash is a derived, read-only figure computed
-          from synced transaction history - not an authoritative provider balance, and nothing here merges provider
-          funds.
-        </p>
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h1 className="text-[22px] font-extrabold mb-1 tracking-tight">Unified outlet view</h1>
+          <p className="text-[13.5px] text-slate-500 max-w-[560px] leading-relaxed">
+            One shared cash drawer, three separate provider balances. Cash is a derived, read-only figure computed
+            from synced transaction history - not an authoritative provider balance, and nothing here merges provider
+            funds.
+          </p>
+        </div>
+
+        {!isAgentRole && <AgentSelector agents={AGENTS} selected={selectedAgent} onSelect={setSelectedAgent} />}
       </div>
 
       {error && (
@@ -63,8 +82,6 @@ export default function DashboardPage() {
           Could not reach the backend API ({error}). Is aggregator-api running on port 8000?
         </div>
       )}
-
-      {!isAgentRole && <AgentSelector agents={AGENTS} selected={selectedAgent} onSelect={setSelectedAgent} />}
 
       {aggregate && (
         <>
@@ -88,10 +105,17 @@ export default function DashboardPage() {
             ))}
           </div>
 
-          <div className="rounded-2xl border border-[#E8EAF0] bg-white px-4 py-3 flex items-center justify-between gap-4 text-sm">
+          <div className="rounded-2xl border border-[#E8EAF0] bg-white px-5 py-3 flex items-center justify-between gap-4 text-sm">
             <span className="text-slate-600">Overall confidence for this agent</span>
             <ConfidenceBadge level={aggregate.overall_confidence} />
           </div>
+
+          <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
+            <CashTrendChart points={cashTrend} />
+            <ActiveAlerts alerts={alerts} />
+          </div>
+
+          <TransactionStream transactions={transactions} />
         </>
       )}
     </div>

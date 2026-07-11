@@ -4,9 +4,11 @@ import type {
   AlertOut,
   AmountOutlierOut,
   AnomalyOut,
+  CashTrendPointOut,
   CaseStatus,
   ForecastOut,
   TokenOut,
+  TransactionOut,
   UserOut,
 } from "./types";
 
@@ -54,6 +56,15 @@ export const api = {
     const search = new URLSearchParams({ transaction_type: transactionType });
     if (provider) search.set("provider", provider);
     return request<AmountOutlierOut[]>(`/aggregate/anomaly/${agentId}/historical?${search.toString()}`);
+  },
+  getTransactions: (agentId: string, limit = 8, provider?: string) => {
+    const search = new URLSearchParams({ limit: String(limit) });
+    if (provider) search.set("provider", provider);
+    return request<TransactionOut[]>(`/aggregate/transactions/${agentId}?${search.toString()}`);
+  },
+  getCashTrend: (agentId: string, hours = 12, buckets = 12) => {
+    const search = new URLSearchParams({ hours: String(hours), buckets: String(buckets) });
+    return request<CashTrendPointOut[]>(`/aggregate/cash-trend/${agentId}?${search.toString()}`);
   },
 
   getAlerts: (filters: { agentId?: string; provider?: string; status?: CaseStatus } = {}) => {

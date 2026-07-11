@@ -16,9 +16,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex flex-1 min-h-screen">
+    <div className="flex flex-1 h-screen overflow-hidden">
       <Sidebar />
-      <div className="flex-1 min-w-0 flex flex-col">
+      <div className="flex-1 min-w-0 flex flex-col h-screen overflow-y-auto">
         <main className="flex-1 min-w-0 px-8 py-7">
           <AuthGate>{children}</AuthGate>
         </main>

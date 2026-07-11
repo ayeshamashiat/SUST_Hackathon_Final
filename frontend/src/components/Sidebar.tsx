@@ -23,7 +23,7 @@ export function Sidebar() {
   const { user, logout } = useAuth();
 
   return (
-    <div className="w-[248px] shrink-0 bg-white border-r border-slate-200 flex flex-col p-4">
+    <div className="w-[248px] shrink-0 h-screen sticky top-0 overflow-y-auto bg-white border-r border-slate-200 flex flex-col p-4">
       <div className="flex items-center gap-2.5 px-2 mb-7">
         <div className="w-9 h-9 rounded-[10px] bg-accent-ink flex items-center justify-center shrink-0">
           <div className="w-[15px] h-[15px] rounded-[4px] bg-accent-light" />
