@@ -51,21 +51,21 @@ export function AlertCard({ alert, onUpdated }: { alert: AlertOut; onUpdated: ()
   }
 
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900 overflow-hidden">
+    <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
       <button
-        className="w-full text-left px-4 py-3 flex items-start justify-between gap-4 hover:bg-slate-800/40"
+        className="w-full text-left px-4 py-3 flex items-start justify-between gap-4 hover:bg-slate-50"
         onClick={() => setExpanded((v) => !v)}
       >
         <div className="space-y-1.5">
           <div className="flex items-center gap-2 flex-wrap">
             <SeverityBadge severity={alert.severity} />
-            <span className="text-xs uppercase tracking-wide text-slate-500">
+            <span className="text-xs uppercase tracking-wide text-slate-600">
               {CATEGORY_LABEL[alert.category] ?? alert.category}
             </span>
             {caseData && <CaseStatusBadge status={caseData.status} />}
           </div>
           <div className="font-medium">{alert.title}</div>
-          <div className="text-xs text-slate-500">
+          <div className="text-xs text-slate-600">
             {alert.agent_name}
             {alert.provider_name ? ` · ${alert.provider_name}` : ""} &middot; {formatRelative(alert.created_at)}
           </div>
@@ -77,50 +77,50 @@ export function AlertCard({ alert, onUpdated }: { alert: AlertOut; onUpdated: ()
       </button>
 
       {expanded && (
-        <div className="border-t border-slate-800 px-4 py-4 space-y-4 text-sm">
+        <div className="border-t border-slate-200 px-4 py-4 space-y-4 text-sm">
           <div className="space-y-2">
-            <p className="text-slate-200">{alert.message_en}</p>
-            <p className="text-slate-400" lang="bn">
+            <p className="text-slate-800">{alert.message_en}</p>
+            <p className="text-slate-600" lang="bn">
               {alert.message_bn}
             </p>
             <p className="text-xs text-slate-500 italic">{alert.confidence_note}</p>
           </div>
 
           <div>
-            <div className="text-xs uppercase tracking-wide text-slate-500 mb-1.5">Evidence</div>
+            <div className="text-xs uppercase tracking-wide text-slate-600 mb-1.5">Evidence</div>
             <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
               {Object.entries(alert.evidence).map(([key, value]) => (
                 <div key={key} className="contents">
                   <dt className="text-slate-500">{key.replace(/_/g, " ")}</dt>
-                  <dd className="text-slate-300 truncate">{formatEvidenceValue(value)}</dd>
+                  <dd className="text-slate-700 truncate">{formatEvidenceValue(value)}</dd>
                 </div>
               ))}
             </dl>
           </div>
 
           {caseData && (
-            <div className="rounded-lg border border-slate-800 bg-slate-950 p-3 space-y-3">
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3 space-y-3">
               <div className="grid grid-cols-2 gap-2 text-xs">
                 <div>
                   <div className="text-slate-500">Routed to</div>
-                  <div className="text-slate-200">{caseData.stakeholder_role}</div>
+                  <div className="text-slate-800">{caseData.stakeholder_role}</div>
                 </div>
                 <div>
                   <div className="text-slate-500">Owner</div>
-                  <div className="text-slate-200">{caseData.owner}</div>
+                  <div className="text-slate-800">{caseData.owner}</div>
                 </div>
                 <div className="col-span-2">
                   <div className="text-slate-500">Recommended next step</div>
-                  <div className="text-slate-200">{caseData.recommended_action}</div>
+                  <div className="text-slate-800">{caseData.recommended_action}</div>
                 </div>
               </div>
 
               <div>
-                <div className="text-xs uppercase tracking-wide text-slate-500 mb-1">History</div>
-                <ul className="space-y-1 text-xs text-slate-400">
+                <div className="text-xs uppercase tracking-wide text-slate-600 mb-1">History</div>
+                <ul className="space-y-1 text-xs text-slate-600">
                   {caseData.events.map((ev) => (
                     <li key={ev.id}>
-                      <span className="text-slate-300">{ev.event_type.replace("_", " ")}</span> by {ev.actor} -{" "}
+                      <span className="text-slate-800">{ev.event_type.replace("_", " ")}</span> by {ev.actor} -{" "}
                       {formatRelative(ev.created_at)}
                       {ev.note ? `: "${ev.note}"` : ""}
                     </li>
@@ -129,20 +129,20 @@ export function AlertCard({ alert, onUpdated }: { alert: AlertOut; onUpdated: ()
               </div>
 
               {nextStatuses.length > 0 ? (
-                <div className="space-y-2 pt-2 border-t border-slate-800">
+                <div className="space-y-2 pt-2 border-t border-slate-200">
                   <div className="flex gap-2">
                     <input
                       value={actor}
                       onChange={(e) => setActor(e.target.value)}
                       placeholder="Your name / role"
-                      className="flex-1 rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs"
+                      className="flex-1 rounded border border-slate-300 bg-white px-2 py-1 text-xs"
                     />
                   </div>
                   <textarea
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
                     placeholder="Optional note (e.g. what you checked, what you arranged)"
-                    className="w-full rounded border border-slate-700 bg-slate-900 px-2 py-1 text-xs"
+                    className="w-full rounded border border-slate-300 bg-white px-2 py-1 text-xs"
                     rows={2}
                   />
                   <div className="flex gap-2 flex-wrap">
@@ -151,7 +151,7 @@ export function AlertCard({ alert, onUpdated }: { alert: AlertOut; onUpdated: ()
                         key={status}
                         disabled={submitting !== null}
                         onClick={() => handleTransition(status)}
-                        className="rounded-lg border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-medium hover:border-emerald-500/50 hover:text-emerald-300 disabled:opacity-50"
+                        className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-medium hover:border-emerald-500/50 hover:text-emerald-700 disabled:opacity-50"
                       >
                         {submitting === status ? "Saving..." : STATUS_LABEL[status]}
                       </button>
@@ -160,7 +160,7 @@ export function AlertCard({ alert, onUpdated }: { alert: AlertOut; onUpdated: ()
                   {error && <p className="text-xs text-rose-400">{error}</p>}
                 </div>
               ) : (
-                <p className="text-xs text-emerald-400 pt-2 border-t border-slate-800">Case resolved.</p>
+                <p className="text-xs text-emerald-700 pt-2 border-t border-slate-200">Case resolved.</p>
               )}
             </div>
           )}

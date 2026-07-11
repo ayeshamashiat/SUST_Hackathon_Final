@@ -48,7 +48,7 @@ export default function AlertsPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold mb-1">Alerts &amp; coordination</h1>
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-slate-600">
           Every alert shows its evidence and confidence, and is routed to a named owner with a recommended next
           step. These are advisory signals for human review - not a fraud determination and not an automated
           action.
@@ -56,7 +56,7 @@ export default function AlertsPage() {
       </div>
 
       {error && (
-        <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-sm text-rose-200">
+        <div className="rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm text-rose-700">
           Could not reach the backend API ({error}).
         </div>
       )}
@@ -66,7 +66,7 @@ export default function AlertsPage() {
         <select
           value={agentFilter}
           onChange={(e) => setAgentFilter(e.target.value)}
-          className="rounded border border-slate-700 bg-slate-900 px-2 py-1 text-sm"
+          className="rounded border border-slate-300 bg-white px-2 py-1 text-sm"
         >
           <option value="">All agents</option>
           {agents.map((a) => (

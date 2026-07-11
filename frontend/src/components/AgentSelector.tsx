@@ -19,8 +19,8 @@ export function AgentSelector({
           onClick={() => onSelect(agent.id)}
           className={`rounded-lg px-3 py-2 text-sm text-left transition-colors border ${
             selected === agent.id
-              ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-200"
-              : "border-slate-800 bg-slate-900 text-slate-300 hover:border-slate-700"
+              ? "border-emerald-300 bg-emerald-50 text-emerald-800"
+              : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
           }`}
         >
           <div className="font-medium">{agent.name}</div>

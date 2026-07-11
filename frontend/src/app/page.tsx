@@ -64,14 +64,14 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-xl font-semibold mb-1">Unified outlet view</h1>
-        <p className="text-sm text-slate-400">
+        <p className="text-sm text-slate-600">
           One shared cash drawer, three separate provider balances. Nothing here merges provider funds - it is a
           read-only combined view for decision support.
         </p>
       </div>
 
       {error && (
-        <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-2 text-sm text-rose-200">
+        <div className="rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm text-rose-700">
           Could not reach the backend API ({error}). Is the backend running on port 8000?
         </div>
       )}
@@ -100,24 +100,24 @@ export default function DashboardPage() {
         </div>
       )}
 
-      <div className="rounded-xl border border-slate-800 bg-slate-900">
-        <div className="px-4 py-3 border-b border-slate-800 text-sm font-medium">Recent transactions</div>
-        <div className="divide-y divide-slate-800 max-h-80 overflow-y-auto">
+      <div className="rounded-xl border border-slate-200 bg-white">
+        <div className="px-4 py-3 border-b border-slate-200 text-sm font-medium">Recent transactions</div>
+        <div className="divide-y divide-slate-200 max-h-80 overflow-y-auto">
           {transactions.length === 0 && <div className="px-4 py-3 text-sm text-slate-500">No activity yet.</div>}
           {transactions.map((t) => (
             <div key={t.id} className="px-4 py-2.5 flex items-center justify-between text-sm">
               <div className="flex items-center gap-3">
                 <span
                   className={`inline-flex w-16 justify-center rounded px-1.5 py-0.5 text-xs font-medium ${
-                    t.type === "CASH_OUT" ? "bg-sky-500/15 text-sky-300" : "bg-fuchsia-500/15 text-fuchsia-300"
+                    t.type === "CASH_OUT" ? "bg-sky-100 text-sky-700" : "bg-fuchsia-100 text-fuchsia-700"
                   }`}
                 >
                   {t.type === "CASH_OUT" ? "Cash-out" : "Cash-in"}
                 </span>
-                <span className="text-slate-400 uppercase text-xs">{t.provider_id}</span>
+                <span className="text-slate-600 uppercase text-xs">{t.provider_id}</span>
                 <span className="text-slate-500 text-xs">{t.customer_ref}</span>
                 {t.status === "FAILED" && (
-                  <span className="rounded bg-rose-500/15 px-1.5 py-0.5 text-xs text-rose-300">
+                  <span className="rounded bg-rose-100 px-1.5 py-0.5 text-xs text-rose-700">
                     declined - insufficient balance
                   </span>
                 )}
