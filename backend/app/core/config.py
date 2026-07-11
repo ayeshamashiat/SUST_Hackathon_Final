@@ -4,7 +4,15 @@ Kept in one place so the numbers behind a live demo (tick rate, thresholds,
 lookback windows) are easy to find and explain to judges.
 """
 
+import os
+
 DATABASE_URL = "sqlite:///./sust_hackathon.db"
+
+# --- Auth ---
+# Dev-only default; override via env var for any non-local deployment.
+JWT_SECRET_KEY = os.environ.get("JWT_SECRET_KEY", "dev-insecure-secret-change-me-before-any-real-deployment")
+JWT_ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 480
 
 # --- Simulation ---
 TICK_SECONDS = 4.0

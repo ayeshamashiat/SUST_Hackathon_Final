@@ -6,6 +6,7 @@ from sqlmodel import Session
 
 from app.api.agents import router as agents_router
 from app.api.alerts import router as alerts_router
+from app.api.auth import router as auth_router
 from app.api.cases import router as cases_router
 from app.api.simulation import router as simulation_router
 from app.core.database import engine, init_db
@@ -40,6 +41,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_router)
 app.include_router(agents_router)
 app.include_router(alerts_router)
 app.include_router(cases_router)

@@ -4,10 +4,19 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 
 from app.core.database import get_session
-from app.models.models import Agent, Alert, AlertCategory, Case, CaseEvent, Provider
+from app.core.deps import get_current_user
+from app.models.models import Agent, Alert, AlertCategory, Case, CaseEvent, Provider, User, UserRole
 from app.schemas.schemas import AlertOut, CaseEventOut, CaseOut
 
 router = APIRouter(tags=["alerts"])
+
+
+def _in_scope(user: User, alert: Alert) -> bool:
+    if user.role == UserRole.AGENT and alert.agent_id != user.agent_id:
+        return False
+    if user.role == UserRole.PROVIDER_OPS and alert.provider_id != user.provider_id:
+        return False
+    return True
 
 
 @router.get("/alerts", response_model=list[AlertOut])
@@ -16,8 +25,14 @@ def list_alerts(
     provider_id: Optional[str] = None,
     category: Optional[AlertCategory] = None,
     limit: int = Query(50, le=200),
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
+    if current_user.role == UserRole.AGENT:
+        agent_id = current_user.agent_id
+    if current_user.role == UserRole.PROVIDER_OPS:
+        provider_id = current_user.provider_id
+
     stmt = select(Alert)
     if agent_id:
         stmt = stmt.where(Alert.agent_id == agent_id)
@@ -30,10 +45,14 @@ def list_alerts(
 
 
 @router.get("/alerts/{alert_id}", response_model=AlertOut)
-def get_alert(alert_id: int, session: Session = Depends(get_session)):
+def get_alert(
+    alert_id: int, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)
+):
     alert = session.get(Alert, alert_id)
     if not alert:
         raise HTTPException(404, "Alert not found")
+    if not _in_scope(current_user, alert):
+        raise HTTPException(403, "Not authorized to view this alert")
     return _to_alert_out(session, alert)
 
 

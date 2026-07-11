@@ -51,6 +51,20 @@ class CaseStatus(str, Enum):
     RESOLVED = "RESOLVED"
 
 
+class UserRole(str, Enum):
+    """The operations hierarchy from the brief (Section 5): outlet -> field/territory
+    officer -> area/district manager -> provider operations team, plus risk/compliance
+    and management oversight. Customers are never a login (Section 5) - not modeled here.
+    """
+
+    AGENT = "AGENT"
+    FIELD_OFFICER = "FIELD_OFFICER"
+    AREA_MANAGER = "AREA_MANAGER"
+    PROVIDER_OPS = "PROVIDER_OPS"
+    RISK_COMPLIANCE = "RISK_COMPLIANCE"
+    MANAGEMENT = "MANAGEMENT"
+
+
 class Provider(SQLModel, table=True):
     """A logically separate mobile financial service provider (bKash/Nagad/Rocket).
 
@@ -67,6 +81,21 @@ class Agent(SQLModel, table=True):
     id: str = Field(primary_key=True)
     name: str
     area: str
+
+
+class User(SQLModel, table=True):
+    """A predetermined operations-hierarchy login (Section 5). No self-registration;
+    accounts are created by the seed script only. Customers never get a row here.
+    """
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    username: str = Field(unique=True, index=True)
+    password_hash: str
+    role: UserRole
+    display_name: str
+    agent_id: Optional[str] = Field(default=None, foreign_key="agent.id")  # AGENT role scope
+    provider_id: Optional[str] = Field(default=None, foreign_key="provider.id")  # PROVIDER_OPS role scope
+    created_at: datetime = Field(default_factory=utcnow)
 
 
 class CashDrawer(SQLModel, table=True):

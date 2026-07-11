@@ -6,25 +6,44 @@ from sqlmodel import Session, select
 from app.alerts.templates import insufficient_data_message, liquidity_messages, stable_message
 from app.analytics.forecaster import ForecastResult, forecast_cash, forecast_provider
 from app.core.database import get_session
-from app.models.models import Agent, CashDrawer, DataFeedStatus, Provider, ProviderBalance, Transaction
+from app.core.deps import get_current_user
+from app.models.models import Agent, CashDrawer, DataFeedStatus, Provider, ProviderBalance, Transaction, User, UserRole
 from app.schemas.schemas import AgentBalancesOut, ForecastOut, ProviderBalanceOut
 
 router = APIRouter(tags=["agents"])
 
 
+def _require_agent_scope(user: User, agent_id: str) -> None:
+    if user.role == UserRole.AGENT and agent_id != user.agent_id:
+        raise HTTPException(403, "Not authorized to view this agent")
+
+
+def _require_provider_scope(user: User, provider_id: Optional[str]) -> None:
+    if user.role == UserRole.PROVIDER_OPS and provider_id is not None and provider_id != user.provider_id:
+        raise HTTPException(403, "Not authorized to view this provider")
+
+
 @router.get("/agents", response_model=list[Agent])
-def list_agents(session: Session = Depends(get_session)):
+def list_agents(current_user: User = Depends(get_current_user), session: Session = Depends(get_session)):
+    if current_user.role == UserRole.AGENT:
+        agent = session.get(Agent, current_user.agent_id)
+        return [agent] if agent else []
     return list(session.exec(select(Agent)))
 
 
 @router.get("/agents/{agent_id}/balances", response_model=AgentBalancesOut)
-def get_balances(agent_id: str, session: Session = Depends(get_session)):
+def get_balances(
+    agent_id: str, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)
+):
+    _require_agent_scope(current_user, agent_id)
     agent = session.get(Agent, agent_id)
     if not agent:
         raise HTTPException(404, "Agent not found")
 
     drawer = session.exec(select(CashDrawer).where(CashDrawer.agent_id == agent_id)).one()
     providers = list(session.exec(select(Provider)))
+    if current_user.role == UserRole.PROVIDER_OPS:
+        providers = [p for p in providers if p.id == current_user.provider_id]
 
     out_providers = []
     for provider in providers:
@@ -64,8 +83,14 @@ def get_transactions(
     agent_id: str,
     provider_id: Optional[str] = None,
     limit: int = Query(50, le=500),
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_session),
 ):
+    _require_agent_scope(current_user, agent_id)
+    if current_user.role == UserRole.PROVIDER_OPS:
+        provider_id = provider_id or current_user.provider_id
+        _require_provider_scope(current_user, provider_id)
+
     stmt = select(Transaction).where(Transaction.agent_id == agent_id)
     if provider_id:
         stmt = stmt.where(Transaction.provider_id == provider_id)
@@ -74,13 +99,18 @@ def get_transactions(
 
 
 @router.get("/agents/{agent_id}/forecast", response_model=list[ForecastOut])
-def get_forecast(agent_id: str, session: Session = Depends(get_session)):
+def get_forecast(
+    agent_id: str, current_user: User = Depends(get_current_user), session: Session = Depends(get_session)
+):
+    _require_agent_scope(current_user, agent_id)
     agent = session.get(Agent, agent_id)
     if not agent:
         raise HTTPException(404, "Agent not found")
 
     providers = list(session.exec(select(Provider)))
     provider_names = {p.id: p.name for p in providers}
+    if current_user.role == UserRole.PROVIDER_OPS:
+        providers = [p for p in providers if p.id == current_user.provider_id]
 
     results = [_to_forecast_out(agent.name, forecast_cash(session, agent_id), provider_names)]
     for provider in providers:

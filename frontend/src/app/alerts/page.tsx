@@ -3,11 +3,14 @@
 import { useEffect, useState } from "react";
 import { AlertCard } from "@/components/AlertCard";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import type { Agent, AlertOut } from "@/lib/types";
 
 const POLL_MS = 5000;
 
 export default function AlertsPage() {
+  const { user } = useAuth();
+  const isAgentRole = user?.role === "AGENT";
   const [agents, setAgents] = useState<Agent[]>([]);
   const [agentFilter, setAgentFilter] = useState<string>("");
   const [alerts, setAlerts] = useState<AlertOut[]>([]);
@@ -61,21 +64,23 @@ export default function AlertsPage() {
         </div>
       )}
 
-      <div className="flex items-center gap-2">
-        <label className="text-xs text-slate-500">Filter by agent</label>
-        <select
-          value={agentFilter}
-          onChange={(e) => setAgentFilter(e.target.value)}
-          className="rounded border border-slate-300 bg-white px-2 py-1 text-sm"
-        >
-          <option value="">All agents</option>
-          {agents.map((a) => (
-            <option key={a.id} value={a.id}>
-              {a.name}
-            </option>
-          ))}
-        </select>
-      </div>
+      {!isAgentRole && (
+        <div className="flex items-center gap-2">
+          <label className="text-xs text-slate-500">Filter by agent</label>
+          <select
+            value={agentFilter}
+            onChange={(e) => setAgentFilter(e.target.value)}
+            className="rounded border border-slate-300 bg-white px-2 py-1 text-sm"
+          >
+            <option value="">All agents</option>
+            {agents.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       <div className="space-y-3">
         <div className="text-xs uppercase tracking-wide text-slate-500">Open ({openAlerts.length})</div>

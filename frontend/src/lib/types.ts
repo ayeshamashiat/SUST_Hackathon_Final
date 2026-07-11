@@ -5,6 +5,25 @@ export type ForecastStatus = "STABLE" | "AT_RISK" | "INSUFFICIENT_DATA";
 export type CaseStatus = "NEW" | "ACKNOWLEDGED" | "IN_PROGRESS" | "ESCALATED" | "RESOLVED";
 export type AlertCategory = "LIQUIDITY" | "ANOMALY" | "DATA_QUALITY";
 
+export type UserRole = "AGENT" | "FIELD_OFFICER" | "AREA_MANAGER" | "PROVIDER_OPS" | "RISK_COMPLIANCE" | "MANAGEMENT";
+
+export interface AuthUser {
+  username: string;
+  role: UserRole;
+  display_name: string;
+  agent_id: string | null;
+  provider_id: string | null;
+}
+
+export interface TokenOut {
+  access_token: string;
+  token_type: string;
+  role: UserRole;
+  display_name: string;
+  agent_id: string | null;
+  provider_id: string | null;
+}
+
 export interface Agent {
   id: string;
   name: string;

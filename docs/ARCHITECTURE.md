@@ -81,6 +81,7 @@ flowchart TB
 - **Narrative templates**: parameterized strings per alert type/language, filled with evidence values computed upstream — templates never invent evidence, they only phrase it.
 - **API layer**: stateless REST + a WebSocket fan-out (added Pass 2) for live updates; all endpoints read from the same DB the analytics/alert engines write to, so the frontend never talks to the simulation directly.
 - **Frontend**: role-oriented pages (agent dashboard, ops/coordination views) rather than one generic table — matches the brief's distinct stakeholder needs (Section 5).
+- **Auth**: backed by a `User` table (`backend/app/models/models.py`) and JWT bearer tokens (`backend/app/core/security.py`, `backend/app/core/deps.py`), issued via `POST /auth/login`. Accounts are predetermined/seeded only (`backend/app/simulation/seed.py`) — no self-registration and no customer login, per Section 5. Every API route (except `/`, `/health`, `/auth/login`) requires a valid token, and each role's data/case-mutation access is scoped server-side (see `docs/CREDENTIALS.md` for the account list and per-role rules).
 
 ## Provider boundary & real-world integration limits
 

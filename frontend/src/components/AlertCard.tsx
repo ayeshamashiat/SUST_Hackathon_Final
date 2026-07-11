@@ -3,9 +3,23 @@
 import { useState } from "react";
 import { CaseStatusBadge, ConfidenceBadge, DataQualityBadge, SeverityBadge } from "@/components/Badges";
 import { api } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { ALLOWED_TRANSITIONS, STATUS_LABEL } from "@/lib/caseTransitions";
 import { formatRelative } from "@/lib/format";
-import type { AlertOut, CaseStatus } from "@/lib/types";
+import type { AlertOut, AuthUser, CaseStatus } from "@/lib/types";
+
+// Mirrors the case-mutation authorization enforced server-side in
+// backend/app/api/cases.py::_require_update_scope - kept in sync so the UI
+// only offers actions the backend will actually accept.
+function canActOnCase(user: AuthUser | null, alert: AlertOut): boolean {
+  if (!user || !alert.case) return false;
+  if (user.role === "RISK_COMPLIANCE") return true;
+  if (user.role === "FIELD_OFFICER") return alert.case.stakeholder_role === "Field Officer";
+  if (user.role === "PROVIDER_OPS") {
+    return alert.case.stakeholder_role === "Provider Operations" && alert.provider_id === user.provider_id;
+  }
+  return false;
+}
 
 const CATEGORY_LABEL: Record<string, string> = {
   LIQUIDITY: "Liquidity",
@@ -26,21 +40,22 @@ function formatEvidenceValue(value: unknown): string {
 }
 
 export function AlertCard({ alert, onUpdated }: { alert: AlertOut; onUpdated: () => void }) {
+  const { user } = useAuth();
   const [expanded, setExpanded] = useState(false);
-  const [actor, setActor] = useState("Field Officer (you)");
   const [note, setNote] = useState("");
   const [submitting, setSubmitting] = useState<CaseStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const caseData = alert.case;
   const nextStatuses = caseData ? ALLOWED_TRANSITIONS[caseData.status] : [];
+  const canAct = canActOnCase(user, alert);
 
   async function handleTransition(status: CaseStatus) {
     if (!caseData) return;
     setSubmitting(status);
     setError(null);
     try {
-      await api.updateCase(caseData.id, { status, note: note || undefined, actor });
+      await api.updateCase(caseData.id, { status, note: note || undefined });
       setNote("");
       onUpdated();
     } catch (e) {
@@ -128,16 +143,11 @@ export function AlertCard({ alert, onUpdated }: { alert: AlertOut; onUpdated: ()
                 </ul>
               </div>
 
-              {nextStatuses.length > 0 ? (
+              {nextStatuses.length > 0 && canAct ? (
                 <div className="space-y-2 pt-2 border-t border-slate-200">
-                  <div className="flex gap-2">
-                    <input
-                      value={actor}
-                      onChange={(e) => setActor(e.target.value)}
-                      placeholder="Your name / role"
-                      className="flex-1 rounded border border-slate-300 bg-white px-2 py-1 text-xs"
-                    />
-                  </div>
+                  <p className="text-xs text-slate-500">
+                    Acting as <span className="text-slate-700">{user?.display_name}</span>
+                  </p>
                   <textarea
                     value={note}
                     onChange={(e) => setNote(e.target.value)}
@@ -159,6 +169,10 @@ export function AlertCard({ alert, onUpdated }: { alert: AlertOut; onUpdated: ()
                   </div>
                   {error && <p className="text-xs text-rose-400">{error}</p>}
                 </div>
+              ) : nextStatuses.length > 0 ? (
+                <p className="text-xs text-slate-500 pt-2 border-t border-slate-200">
+                  Routed to {caseData.owner} - your role cannot act on this case.
+                </p>
               ) : (
                 <p className="text-xs text-emerald-700 pt-2 border-t border-slate-200">Case resolved.</p>
               )}
