@@ -4,7 +4,13 @@ sqlmodel
 psycopg2-binary
 pydantic-settings
 httpx
+<<<<<<< HEAD
 openai
 pandas
 scikit-learn
 joblib
+=======
+passlib
+PyJWT
+python-multipart
+>>>>>>> b848cc5305abb5d3cc9a479c031638968726323c

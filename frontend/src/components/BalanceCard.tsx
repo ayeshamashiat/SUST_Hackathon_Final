@@ -1,6 +1,6 @@
-import { ConfidenceBadge, DataQualityBadge, FeedHealthBadge } from "@/components/Badges";
+import { ConfidenceBadge, SyncStatusBadge } from "@/components/Badges";
 import { formatBDT, formatTime } from "@/lib/format";
-import type { FeedHealth, ForecastOut } from "@/lib/types";
+import type { ForecastOut, SyncStatus } from "@/lib/types";
 
 function statusStripClass(forecast: ForecastOut | undefined) {
   if (!forecast || forecast.status === "INSUFFICIENT_DATA") return "bg-slate-400";
@@ -13,15 +13,15 @@ export function BalanceCard({
   label,
   color,
   balance,
-  feedHealth,
-  feedUpdatedAt,
+  syncStatus,
+  stalenessSeconds,
   forecast,
 }: {
   label: string;
   color: string;
-  balance: number;
-  feedHealth?: FeedHealth;
-  feedUpdatedAt?: string;
+  balance: number | null;
+  syncStatus?: SyncStatus | null;
+  stalenessSeconds?: number | null;
   forecast?: ForecastOut;
 }) {
   return (
@@ -33,19 +33,16 @@ export function BalanceCard({
             <span className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: color }} />
             <span className="font-medium">{label}</span>
           </div>
-          {feedHealth && <FeedHealthBadge health={feedHealth} />}
+          {syncStatus !== undefined && <SyncStatusBadge status={syncStatus} />}
         </div>
-        <div className="text-2xl font-semibold tabular-nums">{formatBDT(balance)}</div>
-        {feedUpdatedAt && (
-          <div className="text-xs text-slate-600">feed updated {formatTime(feedUpdatedAt)}</div>
+        <div className="text-2xl font-semibold tabular-nums">{balance === null ? "—" : formatBDT(balance)}</div>
+        {stalenessSeconds != null && (
+          <div className="text-xs text-slate-600">synced {Math.round(stalenessSeconds)}s ago</div>
         )}
 
         {forecast && (
           <div className="pt-2 border-t border-slate-200 space-y-1.5">
-            <div className="flex items-center gap-2 flex-wrap">
-              <ConfidenceBadge level={forecast.confidence} />
-              <DataQualityBadge quality={forecast.data_quality} />
-            </div>
+            <ConfidenceBadge level={forecast.confidence} />
             {forecast.status === "AT_RISK" && forecast.projected_shortage_at ? (
               <p className="text-sm text-amber-700">
                 May run out around <span className="font-semibold">{formatTime(forecast.projected_shortage_at)}</span>

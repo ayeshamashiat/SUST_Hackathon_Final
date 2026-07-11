@@ -723,6 +723,87 @@ themselves (external account, not something achievable from this session).
 
 ---
 
+### 2026-07-11 — Discovered a backend fork; ported auth/RBAC to the new architecture
+
+**Prompt**: "Make the current frontend consistent with the current backend," followed shortly by "I can't login, it shows 404."
+
+**Summary**: Started rewiring the existing 2-page frontend to aggregator-api's
+real endpoints (new `lib/types.ts`/`api.ts`/`agents.ts`, reworked `Badges`/
+`BalanceCard`, an honest "Anomaly Review" page replacing the non-functional
+"Alerts & Cases" page). Mid-rewrite, file-state reminders showed my own
+edits being silently reverted, and `git log` revealed why: **61 files had
+landed on `main` via a merged PR that this session had zero visibility
+into** - a complete, separate build-out of auth/RBAC, an alert engine, an
+LLM helper, offline evaluation, and `/metrics`, all on top of `backend/app/`
+(the old single-service SQLite backend), plus a full RBAC frontend (login,
+role-scoped UI) built against *that* backend. Both backends bind to port
+8000 and are mutually exclusive - the 404 was literally just my Docker
+stack occupying the port instead of the auth-capable old backend.
+
+Immediately unblocked the user (stopped my stack, installed the old
+backend's new deps, ran it, verified `POST /auth/login` worked), then
+surfaced the fork explicitly rather than silently picking a side - asked
+which backend should be "the" one going forward. **User chose the new
+multi-service architecture** (real Postgres-enforced provider isolation,
+idempotent sync, the historical-baseline anomaly detector) over the old
+one (further along on features, but the provider "isolation" is just a
+column filter in one SQLite file). Framed the remaining work as five
+ordered phases (6: auth, 7: alert engine, 8: LLM, 9: evaluation/metrics,
+10: frontend), explicit that the old backend's new code is the *reference
+to port from*, not wasted effort.
+
+**Phase 6 (this session)**: Auth needs somewhere to write (users, later
+alerts/cases), but `shared_db` is sync-service's exclusive write domain by
+design (Phase 4). Rather than carve an exception into that rule, gave
+aggregator-api its own database - `aggregator_db`, owned by a new
+`aggregator_service` role - so aggregator-api writes its own domain data to
+a database it actually owns, and the "only sync-service writes shared_db"
+guarantee never needs an exception. Ported `security.py` (password hashing,
+JWT), `deps.py` (`get_current_user`, `require_roles`), the `User`/`UserRole`
+model, and the `/auth/login` + `/auth/me` routes from the old backend
+essentially unchanged (same libraries: passlib, PyJWT). Also applied the
+old backend's per-request scope-checking pattern to the *existing*
+`/aggregate/*` endpoints (Phases 1-5 work) rather than leaving them merely
+"logged-in-gated": `AGENT` logins 403 on any agent but their own,
+`PROVIDER_OPS` logins 403 on any provider but their own (cash stays visible
+cross-provider to every role, matching the old backend's own precedent -
+it's the agent's own asset, not provider-confidential data).
+
+Then finished what the login page needs to actually be useful: merged the
+already-solid RBAC frontend auth machinery (`AuthProvider`, `AuthGate`,
+`authStorage`, the login page, `UserBadge` - all reused untouched) with the
+real aggregator-api data layer built earlier this session, replacing the
+old-backend-shaped `lib/api.ts`/`types.ts` calls. Dashboard now shows real
+cash/provider balances + forecasts; "Anomaly Review" shows both detectors'
+live evidence with an explicit banner stating case ownership/escalation
+isn't built yet (Phase 7), rather than shipping dead buttons.
+
+**Verified end-to-end**: login → JWT → `/auth/me` all correct; unauthenticated
+`/aggregate/*` calls now 401; `agent.agent-001` login 403s on `agent-002`,
+200s on its own agent; `ops.bkash` login sees only `bkash` in the provider
+list and 403s when explicitly requesting `?provider=nagad`; full frontend
+typecheck and lint clean; all four backend containers healthy, sync caught
+up with zero failures. Updated `docs/CREDENTIALS.md` (was listing the old
+backend's 3-agent usernames and case-actions that don't exist here yet) and
+`docs/deployment.md` (new 6th Postgres role, new env vars) to match reality.
+
+**Files added**: `backend/aggregator-api/app/auth/{__init__.py,models.py,
+security.py,deps.py,seed.py}`, `backend/aggregator-api/app/routers/auth.py`,
+`frontend/src/components/AnomalyCard.tsx`, `frontend/src/lib/agents.ts`.
+**Files modified**: `backend/db-init/init-databases.sh` (+aggregator_db/
+aggregator_service), `backend/.env.example`, `backend/docker-compose.yml`
+(new env vars for all 3 app services), `backend/aggregator-api/app/{config.py,
+db.py,schemas.py,main.py,routers/aggregate.py}`, `backend/aggregator-api/
+requirements.txt` (passlib, PyJWT, python-multipart), `frontend/src/{lib/
+api.ts,lib/types.ts,app/page.tsx,app/alerts/page.tsx,app/layout.tsx,
+components/Badges.tsx,components/BalanceCard.tsx}`, `docs/CREDENTIALS.md`,
+`docs/deployment.md`.
+**Files removed**: `frontend/src/components/AlertCard.tsx`,
+`frontend/src/lib/caseTransitions.ts` (case-lifecycle UI with nothing to
+call yet - will be rebuilt properly in Phase 7).
+
+---
+
 ### 2026-07-11 — Bulk historical data + per-agent historical anomaly baseline
 
 **Prompt**: Need a huge amount of historical data across all databases, and
@@ -800,4 +881,88 @@ aggregate.py` (new `/aggregate/anomaly/{agent_id}/historical` endpoint),
 `backend/sync-service/app/main.py` + `sync.py` (background-loop reliability
 fix), `backend/provider-api/app/main.py` + `simulator/engine.py` (same fix
 applied proactively).
+
+---
+
+### 2026-07-11 — Phase 7: alert assignment + case-lifecycle workflow (backend + frontend)
+
+**Prompt**: First asked for a top-to-bottom stakeholder assignment/escalation
+loop across the brief's roles (Agent, Operations Team, Risk/Compliance,
+Management, Providers), in both frontend and backend. Mid-implementation
+(before any case/alert code was written - only a shared-constants refactor
+had landed), interrupted with a much more specific, self-contained spec:
+severity/type-based assignment rules (High liquidity → Provider Ops, Medium
+→ Field Officer, Suspicious pattern → Risk Analyst, Data missing →
+Technical Support, Low → Agent only), an explicit 8-state alert lifecycle
+(NEW → ASSIGNED → ACKNOWLEDGED → UNDER_REVIEW → {RESOLVED, MONITORING,
+ESCALATED} → ... → CLOSED), required fields (Alert, Case Notes, Assignment
+History), and hard constraints (never fraud declarations, never financial
+actions, never merge provider balances).
+
+**Summary**: Reconciled the new spec against what already existed before
+writing code. Two real conflicts surfaced and were confirmed with the user
+via AskUserQuestion rather than guessed: (1) the spec's "Technical Support"
+target for data-quality alerts isn't one of the 6 already-seeded login
+roles - resolved by mapping it to Provider Ops (they already own their
+provider's feed health) rather than adding a 7th role/account; (2) the
+spec's 5-stakeholder list omits Area Manager, which already exists as a
+seeded RBAC role from the earlier phase - resolved by keeping the login
+functional but dropping it from the automatic assignment ladder (dashboard-
+only for now).
+
+Built one escalation ladder (not per-category chains):
+`AGENT → FIELD_OFFICER → PROVIDER_OPS → RISK_COMPLIANCE → MANAGEMENT`.
+Alert type + severity only decide the entry point (`cases/routing.py`'s
+`ASSIGNMENT_RULES`, evaluated top-down, documented as the place to edit
+policy); escalating always just moves to the next rung, reassigning
+ownership and resetting to `UNDER_REVIEW`.
+
+Data model deliberately merged into two tables instead of four: `Alert`
+(with `current_owner`/`current_status` embedded directly, per the spec's
+Required Fields) and one append-only `CaseEvent` audit table whose rows
+serve as case notes (`NOTE_ADDED`), assignment history (`ASSIGNED`/
+`ESCALATED`/`REASSIGNED`), and the full audit trail (every row) via three
+filtered views in `AlertOut` - not three separate never-delete tables.
+Bilingual (EN/BN/Banglish) narratives are built directly from the existing
+forecast/anomaly evidence numbers (`cases/narratives.py`), no LLM call
+(Phase 8 not built yet). Data-quality alerts reuse sync-service's own
+`sync_status` (`ok`/`delayed`/`failed`/`conflicting`) rather than
+duplicating feed-health tracking. The alert-evaluation loop follows the
+exact same pattern as sync-service's background loop (per-cycle exception
+catch, since that was a real bug found and fixed earlier this session).
+
+**Verified end-to-end against the live Docker stack** (rebuilt and
+restarted `aggregator-api` only): confirmed alerts are created and assigned
+automatically by the background loop; walked one real alert through the
+entire lifecycle via curl with real role logins - `ops.bkash` acknowledged
+→ started review → escalated with a reason → reassigned to
+`risk.compliance` → resolved → closed, with the audit trail showing every
+step in order; confirmed RBAC works both ways (403 when `field.officer`
+tries to act on a Provider-Ops-owned case, 403 when `ops.nagad` reads a
+bKash-owned alert, 400 when trying to act on an already-`CLOSED` case).
+
+**Frontend**: added `AlertOut`/`CaseEventOut` types and
+acknowledge/start-review/note/monitor/resolve/escalate/close calls to
+`lib/api.ts`; added `AlertCaseCard` (bilingual message toggle, evidence,
+recommended action, role-gated action buttons, full audit trail) and new
+badge components; replaced the Anomaly Review page's "not implemented yet"
+banner with a live "Coordination - assigned cases" section (open/mine/
+closed filters) sitting above the existing raw detection-evidence section.
+**Could not verify visually in a browser this session** - the Chrome
+extension wasn't connected, and Next.js's single-instance-per-directory
+lock meant a second dev server couldn't be started for the preview tools to
+attach to either. Verified instead via a clean `tsc --noEmit`, a clean
+`next lint` (only pre-existing, unrelated error in `auth.tsx`), and watching
+the already-running dev server recompile the changed files with no errors
+across several edits. Recommended the user click through it manually or
+that this be re-verified in a session with a working Chrome connection.
+
+**Files added**: `backend/aggregator-api/app/agents.py`,
+`backend/aggregator-api/app/cases/{__init__,models,routing,narratives,
+engine,workflow}.py`, `backend/aggregator-api/app/routers/alerts.py`,
+`frontend/src/components/AlertCaseCard.tsx`.
+**Files modified**: `backend/aggregator-api/app/auth/seed.py` (import
+shared constants instead of duplicating), `backend/aggregator-api/app/
+{config,db,main,schemas}.py`, `frontend/src/lib/{types,api}.ts`,
+`frontend/src/components/Badges.tsx`, `frontend/src/app/alerts/page.tsx`.
 

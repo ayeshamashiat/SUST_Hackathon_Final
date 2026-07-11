@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlmodel import Session, select
 
+from app.auth.deps import get_current_user
+from app.auth.models import User, UserRole
 from app.db import get_shared_db
 from app.models import ProviderBalance
 from app.schemas import (
@@ -21,8 +23,30 @@ from app.services.confidence import provider_confidence, weakest
 router = APIRouter(prefix="/aggregate", tags=["aggregate"])
 
 
+def _require_agent_scope(user: User, agent_id: str) -> None:
+    """AGENT-role logins only ever see their own outlet - never another
+    agent's balances, forecast, or anomaly evidence."""
+    if user.role == UserRole.AGENT and agent_id != user.agent_id:
+        raise HTTPException(403, "Not authorized to view this agent")
+
+
+def _scoped_providers(user: User, requested: list[str]) -> list[str]:
+    """PROVIDER_OPS-role logins only ever see their own provider's data -
+    a bKash ops login cannot pull Nagad's forecast or anomaly evidence
+    through this API, mirroring the database-level boundary enforced
+    between provider-api's own routers."""
+    if user.role != UserRole.PROVIDER_OPS:
+        return requested
+    if user.provider_id not in requested:
+        raise HTTPException(403, "Not authorized to view this provider")
+    return [user.provider_id]
+
+
 @router.get("/agent/{agent_id}", response_model=AgentAggregateOut)
-def get_agent_aggregate(agent_id: str, session: Session = Depends(get_shared_db)):
+def get_agent_aggregate(
+    agent_id: str, current_user: User = Depends(get_current_user), session: Session = Depends(get_shared_db)
+):
+    _require_agent_scope(current_user, agent_id)
     cash_balance, cash_confidence, cash_note = evaluate_cash(session, agent_id)
 
     provider_rows = {
@@ -35,9 +59,10 @@ def get_agent_aggregate(agent_id: str, session: Session = Depends(get_shared_db)
     if all(row is None for row in provider_rows.values()):
         raise HTTPException(404, f"Agent '{agent_id}' not found - no provider has ever synced data for it")
 
+    visible_providers = _scoped_providers(current_user, list(PROVIDERS))
     providers_out = []
     confidences = [cash_confidence]
-    for p in PROVIDERS:
+    for p in visible_providers:
         row = provider_rows[p]
         level, note = provider_confidence(row)
         confidences.append(level)
@@ -63,7 +88,10 @@ def get_agent_aggregate(agent_id: str, session: Session = Depends(get_shared_db)
 
 
 @router.get("/forecast/{agent_id}", response_model=list[ForecastOut])
-def get_agent_forecast(agent_id: str, session: Session = Depends(get_shared_db)):
+def get_agent_forecast(
+    agent_id: str, current_user: User = Depends(get_current_user), session: Session = Depends(get_shared_db)
+):
+    _require_agent_scope(current_user, agent_id)
     exists = any(
         session.exec(
             select(ProviderBalance).where(ProviderBalance.agent_id == agent_id, ProviderBalance.provider == p)
@@ -73,8 +101,12 @@ def get_agent_forecast(agent_id: str, session: Session = Depends(get_shared_db))
     if not exists:
         raise HTTPException(404, f"Agent '{agent_id}' not found - no provider has ever synced data for it")
 
+    visible_providers = _scoped_providers(current_user, list(PROVIDERS))
+    # CASH is a cross-provider derived figure - shown to every role (see
+    # get_agent_aggregate above for the same call), only the per-provider
+    # forecasts below are scoped to PROVIDER_OPS's own provider.
     results = [forecast_service.forecast_cash(session, agent_id)]
-    for p in PROVIDERS:
+    for p in visible_providers:
         results.append(forecast_service.forecast_provider(session, agent_id, p))
 
     return [
@@ -98,16 +130,19 @@ def get_agent_forecast(agent_id: str, session: Session = Depends(get_shared_db))
 def get_agent_anomalies(
     agent_id: str,
     provider: str = Query(None, description="Limit to one provider (bkash/nagad/rocket); omit to check all three."),
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_shared_db),
 ):
     """Not explicitly named in the brief's endpoint list, but added so the
     rule-based detector required by this phase has a demonstrable, sampleable
     output on its own - Phase 6's alert engine will be what turns a flagged
     result here into a routed, owned Alert/Case."""
-    providers = [provider] if provider else list(PROVIDERS)
-    unknown = set(providers) - set(PROVIDERS)
+    _require_agent_scope(current_user, agent_id)
+    requested = [provider] if provider else list(PROVIDERS)
+    unknown = set(requested) - set(PROVIDERS)
     if unknown:
         raise HTTPException(400, f"Unknown provider(s): {sorted(unknown)}. Valid: {list(PROVIDERS)}")
+    providers = _scoped_providers(current_user, requested)
 
     results = [anomaly_service.detect_velocity_and_clustering(session, agent_id, p) for p in providers]
     return [
@@ -181,6 +216,7 @@ def get_agent_historical_outliers(
     agent_id: str,
     provider: str = Query(None, description="Limit to one provider (bkash/nagad/rocket); omit to check all three."),
     transaction_type: str = Query("cash_out", description="cash_out or cash_in"),
+    current_user: User = Depends(get_current_user),
     session: Session = Depends(get_shared_db),
 ):
     """Separate question from /anomaly above: not 'is there a burst right
@@ -188,12 +224,14 @@ def get_agent_historical_outliers(
     agent specifically tends to do', judged against their own historical
     distribution. Needs real historical depth to mean anything - see
     provider-api/app/historical_seed.py."""
-    providers = [provider] if provider else list(PROVIDERS)
-    unknown = set(providers) - set(PROVIDERS)
+    _require_agent_scope(current_user, agent_id)
+    requested = [provider] if provider else list(PROVIDERS)
+    unknown = set(requested) - set(PROVIDERS)
     if unknown:
         raise HTTPException(400, f"Unknown provider(s): {sorted(unknown)}. Valid: {list(PROVIDERS)}")
     if transaction_type not in ("cash_out", "cash_in"):
         raise HTTPException(400, "transaction_type must be 'cash_out' or 'cash_in'")
+    providers = _scoped_providers(current_user, requested)
 
     results = [
         anomaly_service.detect_amount_outlier(session, agent_id, p, transaction_type=transaction_type)

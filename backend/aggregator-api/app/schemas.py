@@ -3,7 +3,26 @@ from typing import Optional
 
 from pydantic import BaseModel
 
+from app.auth.models import UserRole
+from app.cases.models import AlertType, CaseStatus, Severity
 from app.services.confidence import ConfidenceLevel
+
+
+class TokenOut(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    role: UserRole
+    display_name: str
+    agent_id: Optional[str]
+    provider_id: Optional[str]
+
+
+class UserOut(BaseModel):
+    username: str
+    role: UserRole
+    display_name: str
+    agent_id: Optional[str]
+    provider_id: Optional[str]
 
 
 class ProviderBalanceOut(BaseModel):
@@ -96,4 +115,56 @@ class AmountOutlierOut(BaseModel):
     historical_stdev: Optional[float]
     z_score: Optional[float]
     confidence: ConfidenceLevel
+    message: str
+
+
+# --- Phase 7: alert assignment + case lifecycle ---------------------------
+
+
+class CaseEventOut(BaseModel):
+    id: int
+    event_type: str
+    actor: str
+    note: Optional[str]
+    previous_owner: Optional[UserRole]
+    new_owner: Optional[UserRole]
+    reason: Optional[str]
+    created_at: datetime
+
+
+class AlertOut(BaseModel):
+    id: int
+    provider: Optional[str]
+    agent_id: str
+    alert_type: AlertType
+    metric: str
+    severity: Severity
+    confidence: ConfidenceLevel
+    confidence_note: str
+    evidence: dict
+    title: str
+    message_en: str
+    message_bn: str
+    message_banglish: str
+    recommended_action: str
+    current_owner: UserRole
+    current_status: CaseStatus
+    created_at: datetime
+    updated_at: datetime
+    # Three views over the same underlying event log (see cases/models.py's
+    # CaseEvent docstring) - not three separate tables.
+    notes: list[CaseEventOut]
+    assignment_history: list[CaseEventOut]
+    audit_trail: list[CaseEventOut]
+
+
+class AlertActionIn(BaseModel):
+    note: Optional[str] = None
+
+
+class EscalateIn(BaseModel):
+    reason: str
+
+
+class AddNoteIn(BaseModel):
     message: str
