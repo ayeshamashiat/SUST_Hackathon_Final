@@ -57,6 +57,27 @@ class AnomalyOut(BaseModel):
     message: str
 
 
+class AIRecommendationOut(BaseModel):
+    text: str
+    source: str  # "ai" | "fallback"
+    note: Optional[str] = None
+
+
+class AlertOut(BaseModel):
+    category: str  # LIQUIDITY | ANOMALY
+    metric: str
+    severity: str  # LOW | MEDIUM | HIGH
+    agent_id: str
+    provider: Optional[str]  # None = shared cash
+    title: str
+    message: str
+    evidence: dict
+    confidence: ConfidenceLevel
+    confidence_note: str
+    recommended_action: str
+    ai_recommendation: AIRecommendationOut
+
+
 class AmountOutlierOut(BaseModel):
     """Is this agent's most recent transaction unusual for THIS agent
     specifically, given their own historical pattern - distinct from

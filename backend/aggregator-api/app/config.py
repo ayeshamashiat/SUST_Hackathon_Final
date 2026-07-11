@@ -10,6 +10,11 @@ class Settings(BaseSettings):
     # a second, independently-tunable constant.
     sync_stale_after_seconds: float = 60.0
 
+    # Optional: services/llm.py falls back to a deterministic recommendation
+    # whenever this is blank, so it is never required for alerts to work.
+    openai_api_key: str = ""
+    openai_model: str = "gpt-4o-mini"
+
     class Config:
         env_file = ".env"
 

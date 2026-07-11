@@ -4,3 +4,7 @@ sqlmodel
 psycopg2-binary
 pydantic-settings
 httpx
+openai
+pandas
+scikit-learn
+joblib

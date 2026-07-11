@@ -5,8 +5,14 @@ lookback windows) are easy to find and explain to judges.
 """
 
 import os
+from pathlib import Path
 
-DATABASE_URL = "sqlite:///./sust_hackathon.db"
+from dotenv import load_dotenv
+
+BACKEND_DIR = Path(__file__).resolve().parents[1]
+load_dotenv(BACKEND_DIR / ".env")
+
+DATABASE_URL = os.environ.get("DATABASE_URL") or os.environ.get("SHARED_DATABASE_URL", "sqlite:///./sust_hackathon.db")
 
 # --- Auth ---
 # Dev-only default; override via env var for any non-local deployment.

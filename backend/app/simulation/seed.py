@@ -69,6 +69,7 @@ def is_seeded(session: Session) -> bool:
 def seed(session: Session) -> None:
     for provider_id, name, color in PROVIDERS:
         session.add(Provider(id=provider_id, name=name, color=color))
+    session.commit()
 
     for profile in AGENT_PROFILES.values():
         session.add(Agent(id=profile.agent_id, name=profile.name, area=profile.area))

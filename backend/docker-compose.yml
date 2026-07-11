@@ -72,11 +72,19 @@ services:
     environment:
       SHARED_DATABASE_URL: ${SHARED_DATABASE_URL}
       SYNC_STALE_AFTER_SECONDS: ${SYNC_STALE_AFTER_SECONDS:-60}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o-mini}
     depends_on:
       postgres:
         condition: service_healthy
     ports:
       - "8000:8000"
+    volumes:
+      # Persists the trained forecasting model (app/ml/train_forecast_model.py)
+      # across container restarts/rebuilds - `docker compose exec` writes
+      # into the writable layer otherwise, which a rebuild would discard.
+      - ml_models:/app/app/ml/models
 
 volumes:
   pgdata:
+  ml_models:

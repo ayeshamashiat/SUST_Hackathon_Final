@@ -3,3 +3,7 @@ __pycache__/
 .venv/
 venv/
 .env
+
+# Trained model artifacts - regenerate via app.ml.train_forecast_model, don't commit binaries
+aggregator-api/app/ml/models/*.joblib
+aggregator-api/app/ml/models/*.json
