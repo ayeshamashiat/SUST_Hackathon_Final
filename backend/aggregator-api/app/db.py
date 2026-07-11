@@ -43,5 +43,6 @@ def init_aggregator_schema() -> None:
     shared engine (that schema belongs to sync-service) and never the whole
     global SQLModel metadata."""
     from app.auth.models import User
+    from app.cases.models import Alert, CaseEvent
 
-    SQLModel.metadata.create_all(aggregator_engine, tables=[User.__table__])
+    SQLModel.metadata.create_all(aggregator_engine, tables=[User.__table__, Alert.__table__, CaseEvent.__table__])

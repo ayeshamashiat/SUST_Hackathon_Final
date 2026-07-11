@@ -1,5 +1,14 @@
 import { getToken } from "./authStorage";
-import type { AgentAggregateOut, AmountOutlierOut, AnomalyOut, ForecastOut, TokenOut, UserOut } from "./types";
+import type {
+  AgentAggregateOut,
+  AlertOut,
+  AmountOutlierOut,
+  AnomalyOut,
+  CaseStatus,
+  ForecastOut,
+  TokenOut,
+  UserOut,
+} from "./types";
 
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL ?? "http://localhost:8000";
 
@@ -46,4 +55,28 @@ export const api = {
     if (provider) search.set("provider", provider);
     return request<AmountOutlierOut[]>(`/aggregate/anomaly/${agentId}/historical?${search.toString()}`);
   },
+
+  getAlerts: (filters: { agentId?: string; provider?: string; status?: CaseStatus } = {}) => {
+    const search = new URLSearchParams();
+    if (filters.agentId) search.set("agent_id", filters.agentId);
+    if (filters.provider) search.set("provider", filters.provider);
+    if (filters.status) search.set("status", filters.status);
+    const qs = search.toString();
+    return request<AlertOut[]>(`/alerts${qs ? `?${qs}` : ""}`);
+  },
+  getAlert: (alertId: number) => request<AlertOut>(`/alerts/${alertId}`),
+  acknowledgeAlert: (alertId: number, note?: string) =>
+    request<AlertOut>(`/alerts/${alertId}/acknowledge`, { method: "POST", body: JSON.stringify({ note }) }),
+  startReview: (alertId: number, note?: string) =>
+    request<AlertOut>(`/alerts/${alertId}/start-review`, { method: "POST", body: JSON.stringify({ note }) }),
+  addCaseNote: (alertId: number, message: string) =>
+    request<AlertOut>(`/alerts/${alertId}/notes`, { method: "POST", body: JSON.stringify({ message }) }),
+  monitorAlert: (alertId: number, note?: string) =>
+    request<AlertOut>(`/alerts/${alertId}/monitor`, { method: "POST", body: JSON.stringify({ note }) }),
+  resolveAlert: (alertId: number, note?: string) =>
+    request<AlertOut>(`/alerts/${alertId}/resolve`, { method: "POST", body: JSON.stringify({ note }) }),
+  closeAlert: (alertId: number, note?: string) =>
+    request<AlertOut>(`/alerts/${alertId}/close`, { method: "POST", body: JSON.stringify({ note }) }),
+  escalateAlert: (alertId: number, reason: string) =>
+    request<AlertOut>(`/alerts/${alertId}/escalate`, { method: "POST", body: JSON.stringify({ reason }) }),
 };

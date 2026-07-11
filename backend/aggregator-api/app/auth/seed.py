@@ -8,14 +8,11 @@ contract, not Python code.
 
 from sqlmodel import Session, select
 
+from app.agents import AGENT_IDS, PROVIDER_DISPLAY_NAME
 from app.auth.models import User, UserRole
 from app.auth.security import hash_password
 from app.config import settings
 from app.services.cash import PROVIDERS
-
-_AGENT_IDS = [f"agent-{i:03d}" for i in range(1, 16)]
-
-_PROVIDER_DISPLAY_NAME = {"bkash": "bKash", "nagad": "Nagad", "rocket": "Rocket"}
 
 
 def _user_seeds() -> list[dict]:
@@ -28,7 +25,7 @@ def _user_seeds() -> list[dict]:
                 "agent_id": agent_id,
                 "provider_id": None,
             }
-            for agent_id in _AGENT_IDS
+            for agent_id in AGENT_IDS
         ],
         {
             "username": "field.officer",
@@ -48,7 +45,7 @@ def _user_seeds() -> list[dict]:
             {
                 "username": f"ops.{provider_id}",
                 "role": UserRole.PROVIDER_OPS,
-                "display_name": f"{_PROVIDER_DISPLAY_NAME[provider_id]} Operations Team",
+                "display_name": f"{PROVIDER_DISPLAY_NAME[provider_id]} Operations Team",
                 "agent_id": None,
                 "provider_id": provider_id,
             }

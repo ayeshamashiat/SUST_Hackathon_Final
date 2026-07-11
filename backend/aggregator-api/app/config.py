@@ -80,3 +80,17 @@ ANOMALY_CONCENTRATION_THRESHOLD = 0.5
 HISTORICAL_LOOKBACK_DAYS = 30.0
 HISTORICAL_MIN_SAMPLES = 20  # minimum prior same-type transactions before trusting a mean/stdev for this agent
 HISTORICAL_Z_THRESHOLD = 3.0  # how many of the agent's own historical standard deviations away counts as an outlier
+
+# --- Alert engine (Phase 7: assignment + case lifecycle) ------------------
+# How often the background loop re-evaluates every agent's forecast/anomaly
+# signals into Alert rows - same pattern as sync-service's own poll loop.
+ALERT_EVAL_INTERVAL_SECONDS = 20.0
+# Don't create a duplicate alert for the same agent+provider+type+metric
+# while a prior one for the same thing is still open (anything short of
+# CLOSED) and within this cooldown window.
+ALERT_REOPEN_COOLDOWN_MINUTES = 15.0
+# Liquidity severity thresholds - reuses the same minutes-to-shortage
+# breakpoints as the forecast horizon, so "High liquidity" in the assignment
+# rules means the same thing as an urgent forecast everywhere else.
+LIQUIDITY_HIGH_SEVERITY_MINUTES = 30.0
+LIQUIDITY_MEDIUM_SEVERITY_MINUTES = 90.0

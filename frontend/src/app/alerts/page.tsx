@@ -1,16 +1,113 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AgentSelector } from "@/components/AgentSelector";
+import { AlertCaseCard } from "@/components/AlertCaseCard";
 import { HistoricalOutlierCard, VelocityAnomalyCard } from "@/components/AnomalyCard";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { AGENTS, PROVIDERS, type ProviderId } from "@/lib/agents";
-import type { AmountOutlierOut, AnomalyOut } from "@/lib/types";
+import type { AlertOut, AmountOutlierOut, AnomalyOut } from "@/lib/types";
 
 const POLL_MS = 8000;
 
-export default function AnomalyReviewPage() {
+function isMine(user: { role: string; agent_id: string | null; provider_id: string | null } | null, alert: AlertOut): boolean {
+  if (!user) return false;
+  if (user.role !== alert.current_owner) return false;
+  if (user.role === "AGENT" && alert.agent_id !== user.agent_id) return false;
+  if (user.role === "PROVIDER_OPS" && alert.provider !== user.provider_id) return false;
+  return true;
+}
+
+function CoordinationSection() {
+  const { user } = useAuth();
+  const [alerts, setAlerts] = useState<AlertOut[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [showClosed, setShowClosed] = useState(false);
+  const [onlyMine, setOnlyMine] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    async function refresh() {
+      try {
+        const result = await api.getAlerts();
+        if (!cancelled) {
+          setAlerts(result);
+          setError(null);
+        }
+      } catch (e) {
+        if (!cancelled) setError(String(e));
+      }
+    }
+    refresh();
+    const interval = setInterval(refresh, POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
+  }, []);
+
+  const visible = useMemo(() => {
+    return alerts
+      .filter((a) => showClosed || a.current_status !== "CLOSED")
+      .filter((a) => !onlyMine || isMine(user, a));
+  }, [alerts, showClosed, onlyMine, user]);
+
+  const openCount = alerts.filter((a) => a.current_status !== "CLOSED").length;
+  const mineCount = alerts.filter((a) => a.current_status !== "CLOSED" && isMine(user, a)).length;
+
+  function handleChanged(updated: AlertOut) {
+    setAlerts((prev) => prev.map((a) => (a.id === updated.id ? updated : a)));
+  }
+
+  return (
+    <div className="space-y-3">
+      <div>
+        <h2 className="text-lg font-semibold">Coordination - assigned cases</h2>
+        <p className="text-sm text-slate-600">
+          Every liquidity, anomaly, and data-quality alert is automatically assigned to a stakeholder based on
+          severity and type, then walks a fixed escalation ladder (Agent → Field Officer → Provider Operations →
+          Risk/Compliance → Management) if the current owner can&apos;t resolve it. Nothing here is a fraud
+          determination or an automated financial action - every step requires a person to acknowledge, review, and
+          decide.
+        </p>
+      </div>
+
+      {error && (
+        <div className="rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm text-rose-700">
+          Could not reach the backend API ({error}).
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-4 text-sm">
+        <span className="text-slate-600">
+          {openCount} open case{openCount === 1 ? "" : "s"} · {mineCount} assigned to you
+        </span>
+        <label className="flex items-center gap-1.5 text-xs text-slate-600">
+          <input type="checkbox" checked={onlyMine} onChange={(e) => setOnlyMine(e.target.checked)} />
+          Only assigned to me
+        </label>
+        <label className="flex items-center gap-1.5 text-xs text-slate-600">
+          <input type="checkbox" checked={showClosed} onChange={(e) => setShowClosed(e.target.checked)} />
+          Show closed cases
+        </label>
+      </div>
+
+      <div className="space-y-3">
+        {visible.length === 0 && (
+          <div className="text-sm text-slate-500 rounded-lg border border-dashed border-slate-300 px-4 py-6 text-center">
+            No cases match these filters right now.
+          </div>
+        )}
+        {visible.map((a) => (
+          <AlertCaseCard key={a.id} alert={a} onChanged={handleChanged} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function EvidenceSection() {
   const { user } = useAuth();
   const isAgentRole = user?.role === "AGENT";
   const [selectedAgent, setSelectedAgent] = useState<string | null>(isAgentRole ? user!.agent_id : AGENTS[0]?.id ?? null);
@@ -53,21 +150,14 @@ export default function AnomalyReviewPage() {
   }, [selectedAgent, providerFilter]);
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-3">
       <div>
-        <h1 className="text-xl font-semibold mb-1">Anomaly review</h1>
+        <h2 className="text-lg font-semibold">Detection evidence</h2>
         <p className="text-sm text-slate-600">
           Two independent, explainable checks per provider: a burst-activity detector (frequency + account
           clustering) and a per-agent historical baseline (is this transaction unusual for what this specific agent
-          normally does). Both are advisory signals for human review - never a fraud determination, never an
-          automated action.
+          normally does). Flagged results here are what feed the anomaly cases above.
         </p>
-      </div>
-
-      <div className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-2.5 text-sm text-amber-800">
-        Alert routing, ownership, acknowledgement, escalation, and case resolution are not yet implemented in the
-        backend - this page shows the underlying detection evidence directly. The coordination workflow is the next
-        phase of this build.
       </div>
 
       {error && (
@@ -115,6 +205,18 @@ export default function AnomalyReviewPage() {
           <HistoricalOutlierCard key={`${r.agent_id}-${r.provider}`} result={r} />
         ))}
       </div>
+    </div>
+  );
+}
+
+export default function AnomalyReviewPage() {
+  return (
+    <div className="space-y-10">
+      <div>
+        <h1 className="text-xl font-semibold mb-1">Anomaly review &amp; coordination</h1>
+      </div>
+      <CoordinationSection />
+      <EvidenceSection />
     </div>
   );
 }

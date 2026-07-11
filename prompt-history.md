@@ -882,3 +882,87 @@ aggregate.py` (new `/aggregate/anomaly/{agent_id}/historical` endpoint),
 fix), `backend/provider-api/app/main.py` + `simulator/engine.py` (same fix
 applied proactively).
 
+---
+
+### 2026-07-11 — Phase 7: alert assignment + case-lifecycle workflow (backend + frontend)
+
+**Prompt**: First asked for a top-to-bottom stakeholder assignment/escalation
+loop across the brief's roles (Agent, Operations Team, Risk/Compliance,
+Management, Providers), in both frontend and backend. Mid-implementation
+(before any case/alert code was written - only a shared-constants refactor
+had landed), interrupted with a much more specific, self-contained spec:
+severity/type-based assignment rules (High liquidity → Provider Ops, Medium
+→ Field Officer, Suspicious pattern → Risk Analyst, Data missing →
+Technical Support, Low → Agent only), an explicit 8-state alert lifecycle
+(NEW → ASSIGNED → ACKNOWLEDGED → UNDER_REVIEW → {RESOLVED, MONITORING,
+ESCALATED} → ... → CLOSED), required fields (Alert, Case Notes, Assignment
+History), and hard constraints (never fraud declarations, never financial
+actions, never merge provider balances).
+
+**Summary**: Reconciled the new spec against what already existed before
+writing code. Two real conflicts surfaced and were confirmed with the user
+via AskUserQuestion rather than guessed: (1) the spec's "Technical Support"
+target for data-quality alerts isn't one of the 6 already-seeded login
+roles - resolved by mapping it to Provider Ops (they already own their
+provider's feed health) rather than adding a 7th role/account; (2) the
+spec's 5-stakeholder list omits Area Manager, which already exists as a
+seeded RBAC role from the earlier phase - resolved by keeping the login
+functional but dropping it from the automatic assignment ladder (dashboard-
+only for now).
+
+Built one escalation ladder (not per-category chains):
+`AGENT → FIELD_OFFICER → PROVIDER_OPS → RISK_COMPLIANCE → MANAGEMENT`.
+Alert type + severity only decide the entry point (`cases/routing.py`'s
+`ASSIGNMENT_RULES`, evaluated top-down, documented as the place to edit
+policy); escalating always just moves to the next rung, reassigning
+ownership and resetting to `UNDER_REVIEW`.
+
+Data model deliberately merged into two tables instead of four: `Alert`
+(with `current_owner`/`current_status` embedded directly, per the spec's
+Required Fields) and one append-only `CaseEvent` audit table whose rows
+serve as case notes (`NOTE_ADDED`), assignment history (`ASSIGNED`/
+`ESCALATED`/`REASSIGNED`), and the full audit trail (every row) via three
+filtered views in `AlertOut` - not three separate never-delete tables.
+Bilingual (EN/BN/Banglish) narratives are built directly from the existing
+forecast/anomaly evidence numbers (`cases/narratives.py`), no LLM call
+(Phase 8 not built yet). Data-quality alerts reuse sync-service's own
+`sync_status` (`ok`/`delayed`/`failed`/`conflicting`) rather than
+duplicating feed-health tracking. The alert-evaluation loop follows the
+exact same pattern as sync-service's background loop (per-cycle exception
+catch, since that was a real bug found and fixed earlier this session).
+
+**Verified end-to-end against the live Docker stack** (rebuilt and
+restarted `aggregator-api` only): confirmed alerts are created and assigned
+automatically by the background loop; walked one real alert through the
+entire lifecycle via curl with real role logins - `ops.bkash` acknowledged
+→ started review → escalated with a reason → reassigned to
+`risk.compliance` → resolved → closed, with the audit trail showing every
+step in order; confirmed RBAC works both ways (403 when `field.officer`
+tries to act on a Provider-Ops-owned case, 403 when `ops.nagad` reads a
+bKash-owned alert, 400 when trying to act on an already-`CLOSED` case).
+
+**Frontend**: added `AlertOut`/`CaseEventOut` types and
+acknowledge/start-review/note/monitor/resolve/escalate/close calls to
+`lib/api.ts`; added `AlertCaseCard` (bilingual message toggle, evidence,
+recommended action, role-gated action buttons, full audit trail) and new
+badge components; replaced the Anomaly Review page's "not implemented yet"
+banner with a live "Coordination - assigned cases" section (open/mine/
+closed filters) sitting above the existing raw detection-evidence section.
+**Could not verify visually in a browser this session** - the Chrome
+extension wasn't connected, and Next.js's single-instance-per-directory
+lock meant a second dev server couldn't be started for the preview tools to
+attach to either. Verified instead via a clean `tsc --noEmit`, a clean
+`next lint` (only pre-existing, unrelated error in `auth.tsx`), and watching
+the already-running dev server recompile the changed files with no errors
+across several edits. Recommended the user click through it manually or
+that this be re-verified in a session with a working Chrome connection.
+
+**Files added**: `backend/aggregator-api/app/agents.py`,
+`backend/aggregator-api/app/cases/{__init__,models,routing,narratives,
+engine,workflow}.py`, `backend/aggregator-api/app/routers/alerts.py`,
+`frontend/src/components/AlertCaseCard.tsx`.
+**Files modified**: `backend/aggregator-api/app/auth/seed.py` (import
+shared constants instead of duplicating), `backend/aggregator-api/app/
+{config,db,main,schemas}.py`, `frontend/src/lib/{types,api}.ts`,
+`frontend/src/components/Badges.tsx`, `frontend/src/app/alerts/page.tsx`.
+
