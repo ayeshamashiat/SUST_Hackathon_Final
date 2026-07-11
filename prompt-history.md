@@ -370,3 +370,57 @@ just hit).
 - `backend/aggregator-api/{Dockerfile,requirements.txt,app/main.py,app/__init__.py}` (new)
 - `docs/deployment.md` (new)
 
+---
+
+### 2026-07-11 — Phase 2: Provider API balance/transaction endpoints + seed script
+
+**Prompt**: Implement the provider layer completely: identical
+`/provider/balance/{agent_id}`, `/provider/transactions`, `/provider/health`
+endpoints for bkash/nagad/rocket, each provider isolated to its own
+database; a seed script generating ~10-20 super agents registered across all
+three providers with realistic, non-corrupting-on-rerun synthetic
+transactions; reuse code across providers instead of triplicating CRUD;
+`is_injected_anomaly` must never reach a customer-facing response. Backend
+only, no architecture changes, stop and wait for approval after this phase.
+
+**Summary**: Added `app/models.py` (`Balance`, `Transaction` - one shared
+SQLModel schema applied to three independent engines), `app/db.py` (three
+fully separate engine/session pairs, one per provider, no shared session),
+`app/services.py` (provider-agnostic query functions - isolation comes from
+which `Session` a router hands in, not from anything in the service layer),
+and `app/routers/factory.py` (`build_provider_router(provider, get_db)`,
+called once per provider so the three routers share one implementation
+while each closes over its own DB dependency). Added `app/seed_data.py` (15
+Sylhet-area demo agent identities, reused later when aggregator-api seeds
+its own `Agent` table) and `app/seed.py` (idempotent per-provider seeding -
+generates a chronologically-ordered transaction ledger per agent and derives
+the opening `emoney_balance` from it, so seeded data is internally
+consistent with the same cash/e-money coupling the analytics layer expects).
+Wired both into `main.py`'s startup lifecycle. Verified end-to-end against
+`postgres` + `provider-api` only (left `sync-service`/`aggregator-api` and
+the still-running old SQLite backend untouched): confirmed all endpoints
+work, balances differ per provider for the same agent, `is_injected_anomaly`
+never appears in a transaction response, an unseeded agent 404s, a missing
+`agent_id` query param 422s, restarting the container does not duplicate or
+reset seeded data, and - re-confirming Phase 1's guarantee still holds now
+that real tables exist - `bkash_service`'s Postgres role still cannot even
+connect to `nagad_db`.
+
+**Assumptions made**: (1) The literal endpoint paths in the brief
+(`/provider/balance/{agent_id}` etc.) are mounted under each provider's
+existing `/bkash` `/nagad` `/rocket` prefix, giving e.g.
+`/bkash/provider/balance/{agent_id}` - not a bare top-level path, since three
+providers can't share one unprefixed path. (2) No reset/clear endpoint was
+requested for Phase 2 seed data (only "works repeatedly without corrupting
+data," satisfied by the idempotent skip-if-already-seeded check) - a
+reset control, if wanted, reads as a Phase 3 simulator concern. (3) Balance
+`last_updated` is set to "now" at seed time (representing "confirmed as of
+this snapshot") rather than pinned to the single most recent transaction's
+timestamp.
+
+**Files modified** (all new, under `backend/provider-api/app/`):
+- `models.py`, `db.py`, `config.py`, `schemas.py`, `services.py`
+- `seed_data.py`, `seed.py`
+- `routers/factory.py`, `routers/bkash.py`, `routers/nagad.py`, `routers/rocket.py`
+- `main.py` (rewritten: startup lifespan now calls `init_db()` + `seed_all()`, includes the three provider routers)
+
