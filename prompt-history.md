@@ -574,3 +574,105 @@ write to any provider DB and `shared_service` cannot write to `shared_db`.
 - `backend/.env.example`, `backend/docker-compose.yml` (new `SYNC_*` credentials/URLs)
 - `docs/deployment.md` (documents the 5-role permission model and how to apply it to a pre-Phase-4 volume)
 
+---
+
+### 2026-07-11 — Phase 5: Aggregator API
+
+**Prompt**: Implement aggregator-api's analytics endpoints, reading only
+`shared_db` (never provider databases): `GET /aggregate/agent/{agent_id}`
+(cash balance, all provider balances, staleness, confidence) and
+`GET /aggregate/forecast/{agent_id}` (burn rate, projected shortage,
+confidence depending on staleness/missing/conflicting providers), plus
+explainable rule-based anomaly detection (rolling z-score, frequency
+analysis, account clustering - no black-box model; evidence must cite
+transaction IDs/timestamps/amounts; careful language only - "unusual",
+"requires review", "low confidence", never "fraud"). Don't modify
+provider-api. Stop after this phase; show a recommended commit message.
+
+**Summary**: A real gap surfaced immediately: `GET /aggregate/agent/{id}`
+is required to return a cash balance, but no component in this rebuilt
+architecture has ever generated, stored, or synced one - Phase 3's simulator
+only ever writes provider e-money transactions, and Phase 4 made `shared_db`
+writable by sync-service alone. Resolved it the way already established for
+this exact tension back in Phase 0 (cash isn't provider data, so it was
+never going to arrive via provider sync) but adapted to this phase's
+tighter, explicit constraint ("read ONLY shared_db"): rather than having any
+service write a cash column, `services/cash.py` **derives** the cash balance
+read-only, from `transactions_projection` already sitting in `shared_db` -
+every `cash_out` decreases cash (agent hands over physical money) and every
+`cash_in` increases it, the same coupling already established in
+provider-api's models/seed/simulator. A single documented opening-balance
+constant (`CASH_OPENING_BALANCE = 80,000`) stands in for a real per-agent
+starting-cash source, which does not exist yet - called out explicitly in
+`config.py` as a modeling assumption, not a hidden guess. No writes anywhere,
+no provider-api change, satisfies "read only shared_db" exactly as stated.
+
+Ported the burn-rate forecaster and velocity-anomaly detector's statistical
+approach from the earlier single-service prototype (proven, already
+documented there) onto `shared_db`'s schema, and added the confidence
+wiring the brief explicitly requires: `services/confidence.py` turns
+Phase 4's `staleness_seconds`/`sync_status` into a `HIGH`/`MEDIUM`/`LOW`
+signal (missing provider row, `failed`, and `conflicting` all map to `LOW`;
+`delayed` or staleness past 60s maps to `LOW`; otherwise `MEDIUM`/`HIGH` by
+freshness), and every forecast/aggregate response takes the *weaker* of its
+own statistical confidence and this data-quality confidence - a
+clean-looking trend computed from stale or conflicting source data cannot
+report as `HIGH`. Cash's confidence is the weakest across all three
+providers, since it depends on all of them.
+
+The anomaly detector combines three signals rather than z-score alone,
+specifically because a naive frequency-only detector would flag Phase 3's
+legitimate Eid-spike traffic as unusual (it IS high-volume): a rolling
+z-score of window transaction count vs. this agent+provider's own recent
+baseline (frequency), and an account-concentration ratio (unique accounts /
+window count) (clustering) - both must deviate together before anything is
+flagged, plus an amount-coefficient-of-variation figure carried as
+supporting evidence. Evidence cites real `provider_txn_id`s, timestamps, and
+amounts pulled directly from `transactions_projection`; every message uses
+"unusual"/"requires review"/confidence language and explicitly states "this
+is not a fraud determination."
+
+Added a third endpoint, `GET /aggregate/anomaly/{agent_id}`, not named in
+the brief's literal endpoint list - added so the detector has a
+demonstrable, sampleable output of its own (per this phase's "sample
+output" deliverable); Phase 6's alert engine is what will turn a flagged
+result here into a routed, owned Alert/Case.
+
+**Also fixed a real isolation gap found during verification**: every
+service was using `env_file: .env`, which hands EVERY service's credentials
+to EVERY container - `aggregator-api` was receiving `nagad_service`'s full
+read-write password in its own environment despite never reading it in
+code, meaning "aggregator must never query provider databases" was only
+true because the code didn't currently try, not because it couldn't.
+Replaced `env_file: .env` with an explicit `environment:` allow-list per
+service in `docker-compose.yml` (provider-api gets only its 3 provider
+URLs; sync-service gets only its `SYNC_*` credentials; aggregator-api gets
+only `SHARED_DATABASE_URL` + the shared staleness threshold) - `.env` is
+still the single source of values via Compose's `${VAR}` substitution, it's
+just no longer injected wholesale into every container. Verified by reading
+each container's actual environment directly.
+
+**Verified end-to-end** against all four services (old backend untouched),
+reusing the demo data accumulated across Phases 2-4 in the persisted
+Postgres volume: `/aggregate/agent` correctly showed per-provider
+confidence dropping to `LOW` for a genuinely stale provider and `MEDIUM`
+for fresh-but-not-instant ones; `/aggregate/forecast` showed `AT_RISK` cash
+with `top_contributors` correctly attributing most of the drain to bkash,
+and confidence correctly downgraded by the same staleness; triggered a
+fresh anomaly burst via Phase 3's simulator on a clean agent and confirmed
+`/aggregate/anomaly` flagged it live with real transaction-id evidence;
+triggered a fresh Eid-spike batch and confirmed it was **not** flagged
+despite a high z-score (2.79), because its account-concentration ratio was
+1.0 (fully diverse) - the exact false-positive this detector's two-signal
+design exists to avoid; re-confirmed the DB-level provider/shared_db
+boundaries still hold and additionally confirmed via `docker compose exec
+... env` that aggregator-api's container carries no provider-database
+credential at all after the compose fix.
+
+**Files added** (`backend/aggregator-api/app/`): `config.py`, `db.py`,
+`models.py`, `schemas.py`, `services/confidence.py`, `services/cash.py`,
+`services/forecast.py`, `services/anomaly.py`, `routers/aggregate.py`;
+`main.py` updated to include the new router.
+**Files modified**: `backend/docker-compose.yml` (env allow-lists),
+`docs/deployment.md` (documents the env-scoping fix).
+

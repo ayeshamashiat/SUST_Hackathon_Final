@@ -23,9 +23,21 @@ services:
   # Not exposed to the frontend. Owns bkash_db/nagad_db/rocket_db access and
   # (from Phase 2 on) the /simulator router. Only aggregator-api talks to it,
   # over the internal compose network.
+  #
+  # Deliberately an explicit `environment:` allow-list, not `env_file: .env`
+  # - a shared env_file would hand every service's credentials to every
+  # container (e.g. aggregator-api would receive nagad_service's full-access
+  # password even though its code never reads it), which quietly weakens the
+  # "aggregator must never query provider databases" and provider-boundary
+  # guarantees down to "the code doesn't currently do that" instead of "the
+  # credential to do that isn't even present." Each service below gets only
+  # the variables its own config.py actually declares.
   provider-api:
     build: ./provider-api
-    env_file: .env
+    environment:
+      BKASH_DATABASE_URL: ${BKASH_DATABASE_URL}
+      NAGAD_DATABASE_URL: ${NAGAD_DATABASE_URL}
+      ROCKET_DATABASE_URL: ${ROCKET_DATABASE_URL}
     depends_on:
       postgres:
         condition: service_healthy
@@ -36,7 +48,13 @@ services:
   # and projects into shared_db. Never talks to provider-api over HTTP.
   sync-service:
     build: ./sync-service
-    env_file: .env
+    environment:
+      SYNC_BKASH_DATABASE_URL: ${SYNC_BKASH_DATABASE_URL}
+      SYNC_NAGAD_DATABASE_URL: ${SYNC_NAGAD_DATABASE_URL}
+      SYNC_ROCKET_DATABASE_URL: ${SYNC_ROCKET_DATABASE_URL}
+      SYNC_SHARED_DATABASE_URL: ${SYNC_SHARED_DATABASE_URL}
+      SYNC_POLL_INTERVAL_SECONDS: ${SYNC_POLL_INTERVAL_SECONDS:-10}
+      SYNC_STALE_AFTER_SECONDS: ${SYNC_STALE_AFTER_SECONDS:-60}
     depends_on:
       postgres:
         condition: service_healthy
@@ -46,10 +64,14 @@ services:
   # The only service the frontend talks to (matches its existing
   # NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 default). Reads shared_db
   # only; proxies /simulation/* to provider-api's /simulator router
-  # internally so the frontend needs zero changes.
+  # internally so the frontend needs zero changes. Note the absence of any
+  # BKASH_/NAGAD_/ROCKET_ variable below - it has no provider DB credential
+  # to use even if a bug tried to.
   aggregator-api:
     build: ./aggregator-api
-    env_file: .env
+    environment:
+      SHARED_DATABASE_URL: ${SHARED_DATABASE_URL}
+      SYNC_STALE_AFTER_SECONDS: ${SYNC_STALE_AFTER_SECONDS:-60}
     depends_on:
       postgres:
         condition: service_healthy

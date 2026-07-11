@@ -44,6 +44,24 @@ curl http://localhost:8002/health   # sync-service
 curl http://localhost:8002/sync/status   # sync-service: per-provider sync state + status counts (debug-only, not required by any spec)
 ```
 
+## Container environment scoping (Phase 5)
+
+Each of `provider-api`, `sync-service`, `aggregator-api` gets an explicit
+`environment:` allow-list in `docker-compose.yml` - not `env_file: .env`.
+A shared `env_file` would hand every service's credentials to every
+container (e.g. `aggregator-api` would receive `nagad_service`'s full
+read-write password even though its code never reads it), which quietly
+weakens "aggregator must never query provider databases" down to "the code
+doesn't currently do that" instead of "the credential to do that isn't even
+present." `.env` at the project root is still the single source of values -
+Docker Compose uses it for `${VAR}` substitution in the compose file, it's
+just no longer injected wholesale into any container.
+
+Verify a container's actual environment any time with:
+```bash
+docker compose exec aggregator-api env   # must show no BKASH_/NAGAD_/ROCKET_ variable
+```
+
 ## Postgres roles (updated Phase 4)
 
 Five roles now exist, each scoped to exactly what it needs - this is
