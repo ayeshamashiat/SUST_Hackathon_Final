@@ -966,3 +966,119 @@ shared constants instead of duplicating), `backend/aggregator-api/app/
 {config,db,main,schemas}.py`, `frontend/src/lib/{types,api}.ts`,
 `frontend/src/components/Badges.tsx`, `frontend/src/app/alerts/page.tsx`.
 
+---
+
+### 2026-07-12 — Phase 8: AI recommendation (OpenAI) + trained ML liquidity-forecast model
+
+**Prompt**: "generate alert for liquidity forecast and anomaly using ai
+recommendation alongside current logic, help me with that." Clarified to:
+target `aggregator-api` (bigger scope, vs. the old `backend/app` monolith),
+and a real OpenAI call with a deterministic fallback rather than staying
+mock-only. Mid-build, a second request: "i do think we need to train a
+model ourself" - "basically the way alert should be generated is based on
+past transaction history of the agent... so we need data right?" Clarified
+to a forecasting model (predict future balance/burn-rate from each agent's
+own history - no labels needed) rather than a supervised anomaly classifier
+(the only labels available are the simulator's own synthetic
+`is_injected_anomaly` flag, which the existing rule-based detector already
+scores 100% precision/recall against in `docs/OFFLINE_EVALUATION.md` - a
+trained classifier would just relearn the same synthetic injection pattern,
+trading away the detector's auditability for no accuracy gain). Throughout:
+must sit *alongside* the existing rule-based forecast/anomaly logic, never
+replace or change whether something gets flagged.
+
+**Summary**: Built `services/llm.py` - a small OpenAI abstraction that
+packages the evidence `forecast.py`/`anomaly.py` already computed (balance,
+burn rate, z-score, confidence, etc.) into a prompt with a strict system
+prompt (advisory only, never "fraud"/"confirmed", cite the actual numbers,
+say so plainly when confidence is low), and falls back to a deterministic
+templated sentence whenever `OPENAI_API_KEY` is blank or the call fails, so
+alert generation is never blocked on an external service.
+
+Separately built `app/ml/` - a real, trained forecasting model, additive to
+(never replacing) `forecast.py`'s statistical trend detector: `features.py`
+buckets each agent's transaction history into 15-minute intervals with
+calendar (hour-of-day/weekend) + lag (1h/24h) features;
+`train_forecast_model.py` trains a `HistGradientBoostingRegressor` on the
+full history already seeded (Phase 4's historical-backfill session),
+evaluated against a naive persistence baseline on a time-based (not random)
+train/test split so evaluation never leaks future data into training;
+`services/ml_forecast.py` loads the artifact and returns `None` gracefully
+if untrained or under-provisioned with history, so it can never block an
+alert. Verified the full pipeline end-to-end with synthetic data before
+touching the real container (bucketing math, categorical feature handling,
+single-row inference), then ran the real training script: 9,852 training
+rows, model MAE 1,166 vs. naive-baseline MAE 1,742 BDT/bucket - a real,
+measured improvement, not an assumed one.
+
+**Found and reconciled a real architectural collision mid-session**: initial
+integration went into a new ephemeral `services/alerts.py` +
+`/aggregate/alerts/{agent_id}` endpoint (justified at the time because
+`aggregator-api`'s Postgres role is SELECT-only on `shared_db`, so nothing
+there could persist an Alert row). Discovered shortly after that a
+separate, more complete persisted alert/case-lifecycle system
+(`app/cases/{engine,models,narratives,routing,workflow}.py`, its own
+read-write `aggregator_db`) had been built in this same repo since the
+last session touched it - `cases/narratives.py`'s own docstring explicitly
+reserved "Phase 8, not built yet" for exactly this LLM layer. The ephemeral
+endpoint was also now broken (colliding `AlertOut` schema redefinition
+caused a 500 for any agent with a real alert). Reconciled by deleting the
+orphaned `services/alerts.py` + endpoint entirely and wiring
+`llm.recommend_liquidity`/`recommend_anomaly` (+ new
+`recommend_amount_outlier`) and `ml_forecast.predict` directly into the
+real, persisted `cases/engine.py`, with three new nullable columns
+(`ai_recommendation`, `ai_recommendation_source`, `ai_recommendation_note`)
+added to the `Alert` model.
+
+**Found and fixed a second real bug during live verification**: after
+rebuilding and restarting `aggregator-api`, the background alert-evaluation
+loop crashed every cycle with `UndefinedColumn: alert.ai_recommendation
+does not exist` - `init_aggregator_schema()` only creates missing tables
+via `SQLModel.metadata.create_all`, it never alters existing ones (no
+Alembic in this project), so the pre-existing `alert` table in Postgres
+didn't pick up the three new columns just by changing the Python model.
+Fixed with an additive, non-destructive `ALTER TABLE alert ADD COLUMN IF
+NOT EXISTS ...` directly against the running `aggregator_db` (verified the
+162 existing alert rows were untouched), then restarted the container and
+confirmed a clean cycle.
+
+**Found and fixed a third gap**: the frontend's `AlertOut` TypeScript type
+and `AlertCaseCard.tsx` predated this feature entirely, so even once the
+backend was returning `ai_recommendation` correctly, nothing rendered it
+(and the generic evidence renderer would have shown the `ml_prediction`
+object as literal `"[object Object]"`). Added `AIRecommendationOut` to
+`lib/types.ts`, and a distinct "AI-generated recommendation" box (tagged
+"Live AI" vs. "Rule-based fallback" from `source`) plus a pulled-out "ML
+model prediction" line in `AlertCaseCard.tsx`.
+
+**Verified end-to-end against the live Docker stack**: confirmed via
+`docker logs` a real `POST https://api.openai.com/v1/chat/completions`
+returning `200 OK`; pulled a live alert (`agent-006`, id 164) showing a
+real GPT-written recommendation (`source: "ai"`) that correctly cited the
+actual balance/burn-rate numbers, alongside a populated `ml_prediction`
+(`predicted_burn_rate_per_minute: 59.43`) from the trained model; confirmed
+across alerts 164-167 (four consecutive evaluation cycles) that this was
+stable, not a one-off; frontend `npx tsc --noEmit` clean. Separately
+confirmed, when asked directly, that no provider database was affected by
+any of this session's changes - `psql -l` and per-database `\dt` against
+`bkash_db`/`nagad_db`/`rocket_db`/`shared_db`/`aggregator_db` all still
+present with their expected tables and row counts; the only write made all
+session was the one additive `ALTER TABLE` above.
+
+**Files added**: `backend/aggregator-api/app/services/llm.py`,
+`backend/aggregator-api/app/ml/{__init__,features,train_forecast_model}.py`,
+`backend/aggregator-api/app/services/ml_forecast.py`.
+**Files modified**: `backend/aggregator-api/app/cases/{models,engine}.py`
+(ai_recommendation columns + wiring), `backend/aggregator-api/app/
+{schemas,routers/aggregate,routers/alerts}.py`, `backend/aggregator-api/
+requirements.txt` (openai, pandas, scikit-learn, joblib),
+`backend/docker-compose.yml` (`OPENAI_API_KEY`/`OPENAI_MODEL` env vars,
+`ml_models` volume for trained-model persistence), `backend/.env.example`,
+`frontend/src/lib/types.ts`, `frontend/src/components/AlertCaseCard.tsx`.
+**Files removed**: `backend/aggregator-api/app/services/alerts.py` (the
+orphaned ephemeral endpoint, superseded by `cases/engine.py`).
+**Live data fix (not a file change)**: additive `ALTER TABLE alert ADD
+COLUMN IF NOT EXISTS ai_recommendation/ai_recommendation_source/
+ai_recommendation_note` against the running `aggregator_db`, to match the
+already-migrated `Alert` SQLModel.
+
