@@ -106,18 +106,57 @@ export function AlertCaseCard({ alert, onChanged }: { alert: AlertOut; onChanged
             <div className="text-slate-800">{alert.recommended_action}</div>
           </div>
 
+          {alert.ai_recommendation && (
+            <div className="rounded-lg bg-indigo-50/50 border border-indigo-200 px-3 py-2">
+              <div className="flex items-center gap-2 mb-1">
+                <div className="text-xs uppercase tracking-wide text-indigo-800">AI-generated recommendation</div>
+                <span
+                  className={`text-[10px] rounded px-1.5 py-0.5 ${
+                    alert.ai_recommendation.source === "ai" ? "bg-indigo-600 text-white" : "bg-slate-200 text-slate-600"
+                  }`}
+                >
+                  {alert.ai_recommendation.source === "ai" ? "Live AI" : "Rule-based fallback"}
+                </span>
+              </div>
+              <div className="text-slate-800">{alert.ai_recommendation.text}</div>
+              {alert.ai_recommendation.note && (
+                <div className="text-xs text-slate-500 italic mt-1">{alert.ai_recommendation.note}</div>
+              )}
+            </div>
+          )}
+
           <div>
             <div className="text-xs uppercase tracking-wide text-slate-500 mb-1.5">Evidence</div>
             <dl className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
-              {Object.entries(alert.evidence).map(([k, v]) => (
-                <Fragment key={k}>
-                  <dt className="text-slate-500">{k.replace(/_/g, " ")}</dt>
-                  <dd className="text-slate-700 truncate">
-                    {typeof v === "number" && k.toLowerCase().includes("balance") ? formatBDT(v) : String(v ?? "—")}
-                  </dd>
-                </Fragment>
-              ))}
+              {Object.entries(alert.evidence)
+                .filter(([k]) => k !== "ml_prediction")
+                .map(([k, v]) => (
+                  <Fragment key={k}>
+                    <dt className="text-slate-500">{k.replace(/_/g, " ")}</dt>
+                    <dd className="text-slate-700 truncate">
+                      {typeof v === "number" && k.toLowerCase().includes("balance") ? formatBDT(v) : String(v ?? "—")}
+                    </dd>
+                  </Fragment>
+                ))}
             </dl>
+            {Boolean(alert.evidence.ml_prediction) && (
+              <div className="mt-2 rounded border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs text-slate-600">
+                <span className="uppercase tracking-wide text-slate-500">ML model prediction</span>
+                {(() => {
+                  const ml = alert.evidence.ml_prediction as {
+                    predicted_burn_rate_per_minute: number;
+                    predicted_minutes_to_shortage: number | null;
+                  };
+                  return (
+                    <div>
+                      burn rate ≈ {formatBDT(ml.predicted_burn_rate_per_minute)}/min
+                      {ml.predicted_minutes_to_shortage != null &&
+                        `, ~${ml.predicted_minutes_to_shortage.toFixed(0)} min to projected shortage`}
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
             <div className="text-xs text-slate-500 mt-1.5">{alert.confidence_note}</div>
           </div>
 

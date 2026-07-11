@@ -131,6 +131,12 @@ export type CaseStatus =
   | "RESOLVED"
   | "CLOSED";
 
+export interface AIRecommendationOut {
+  text: string;
+  source: "ai" | "fallback";
+  note: string | null;
+}
+
 export interface CaseEventOut {
   id: number;
   event_type: string;
@@ -157,6 +163,7 @@ export interface AlertOut {
   message_bn: string;
   message_banglish: string;
   recommended_action: string;
+  ai_recommendation: AIRecommendationOut | null;
   current_owner: UserRole;
   current_status: CaseStatus;
   created_at: string;
