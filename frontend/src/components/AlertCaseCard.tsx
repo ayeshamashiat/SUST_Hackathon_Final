@@ -68,7 +68,7 @@ export function AlertCaseCard({ alert, onChanged }: { alert: AlertOut; onChanged
   }
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+    <div className="rounded-2xl border border-[#E8EAF0] bg-white overflow-hidden">
       <button
         className="w-full text-left px-4 py-3 flex items-start justify-between gap-4 hover:bg-slate-50"
         onClick={() => setExpanded((v) => !v)}
@@ -89,15 +89,15 @@ export function AlertCaseCard({ alert, onChanged }: { alert: AlertOut; onChanged
       </button>
 
       {expanded && (
-        <div className="border-t border-slate-200 px-4 py-4 text-sm space-y-4">
+        <div className="border-t border-[#EFF1F6] px-4 py-4 text-sm space-y-4">
           <div>
             <div className="flex items-center gap-2 mb-1.5">
               {LANGS.map((l) => (
                 <button
                   key={l}
                   onClick={() => setLang(l)}
-                  className={`text-xs rounded px-2 py-0.5 border ${
-                    lang === l ? "border-emerald-300 bg-emerald-50 text-emerald-800" : "border-slate-200 text-slate-500"
+                  className={`text-xs rounded-md px-2 py-0.5 border ${
+                    lang === l ? "border-accent-light bg-accent-light/40 text-accent" : "border-[#E3E6EE] text-slate-500"
                   }`}
                 >
                   {LANG_LABEL[l]}
@@ -107,6 +107,7 @@ export function AlertCaseCard({ alert, onChanged }: { alert: AlertOut; onChanged
             <p className="text-slate-800">{messageFor(alert, lang)}</p>
           </div>
 
+<<<<<<< HEAD
           {alert.confidence === "LOW" && (
             <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
               <div className="text-xs uppercase tracking-wide text-amber-800 mb-1">Confidence reduced</div>
@@ -117,6 +118,11 @@ export function AlertCaseCard({ alert, onChanged }: { alert: AlertOut; onChanged
           <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2">
             <div className="text-xs uppercase tracking-wide text-slate-500 mb-1">Recommended next step</div>
             <div className="text-slate-800">{alert.recommended_action}</div>
+=======
+          <div className="rounded-xl bg-[#FAFBFD] border border-[#EFF1F6] px-3.5 py-3">
+            <div className="text-xs uppercase tracking-wide text-slate-400 mb-1">Recommended next step</div>
+            <div className="text-slate-800 font-medium">{alert.recommended_action}</div>
+>>>>>>> d62e1759c36e9580ad46432e5fa3e2a264390af4
           </div>
 
           <RecommendationList actions={recommendations} />

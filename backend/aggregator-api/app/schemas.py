@@ -76,6 +76,24 @@ class AnomalyOut(BaseModel):
     message: str
 
 
+class TransactionOut(BaseModel):
+    id: int
+    agent_id: str
+    provider: str
+    type: str
+    amount: float
+    account_ref: str
+    occurred_at: datetime
+
+
+class CashTrendPointOut(BaseModel):
+    bucket_start: datetime
+    bucket_end: datetime
+    cash_balance: float
+    cash_in: float
+    cash_out: float
+
+
 class AmountOutlierOut(BaseModel):
     """Is this agent's most recent transaction unusual for THIS agent
     specifically, given their own historical pattern - distinct from

@@ -97,6 +97,24 @@ export interface AnomalyOut {
   message: string;
 }
 
+export interface TransactionOut {
+  id: number;
+  agent_id: string;
+  provider: string;
+  type: string; // "cash_in" | "cash_out"
+  amount: number;
+  account_ref: string;
+  occurred_at: string;
+}
+
+export interface CashTrendPointOut {
+  bucket_start: string;
+  bucket_end: string;
+  cash_balance: number;
+  cash_in: number;
+  cash_out: number;
+}
+
 export interface AmountOutlierOut {
   agent_id: string;
   provider: string;

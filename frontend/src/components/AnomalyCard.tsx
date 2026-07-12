@@ -15,7 +15,7 @@ export function VelocityAnomalyCard({ result }: { result: AnomalyOut }) {
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+    <div className="rounded-2xl border border-[#E8EAF0] bg-white overflow-hidden">
       <button
         className="w-full text-left px-4 py-3 flex items-start justify-between gap-4 hover:bg-slate-50"
         onClick={() => setExpanded((v) => !v)}
@@ -74,7 +74,7 @@ export function HistoricalOutlierCard({ result }: { result: AmountOutlierOut }) 
   const [expanded, setExpanded] = useState(false);
 
   return (
-    <div className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+    <div className="rounded-2xl border border-[#E8EAF0] bg-white overflow-hidden">
       <button
         className="w-full text-left px-4 py-3 flex items-start justify-between gap-4 hover:bg-slate-50"
         onClick={() => setExpanded((v) => !v)}

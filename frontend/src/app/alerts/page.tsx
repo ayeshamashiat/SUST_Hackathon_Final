@@ -12,6 +12,7 @@ import { AGENTS, PROVIDERS, type ProviderId } from "@/lib/agents";
 import type { AlertOut, AmountOutlierOut, AnomalyOut } from "@/lib/types";
 
 const POLL_MS = 8000;
+const CASES_PAGE_SIZE = 5;
 
 function isMine(user: { role: string; agent_id: string | null; provider_id: string | null } | null, alert: AlertOut): boolean {
   if (!user) return false;
@@ -27,6 +28,7 @@ function CoordinationSection() {
   const [error, setError] = useState<string | null>(null);
   const [showClosed, setShowClosed] = useState(false);
   const [onlyMine, setOnlyMine] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(CASES_PAGE_SIZE);
 
   useEffect(() => {
     let cancelled = false;
@@ -49,11 +51,19 @@ function CoordinationSection() {
     };
   }, []);
 
-  const visible = useMemo(() => {
+  const filtered = useMemo(() => {
     return alerts
       .filter((a) => showClosed || a.current_status !== "CLOSED")
       .filter((a) => !onlyMine || isMine(user, a));
   }, [alerts, showClosed, onlyMine, user]);
+
+  useEffect(() => {
+    setVisibleCount(CASES_PAGE_SIZE);
+  }, [showClosed, onlyMine]);
+
+  const visible = filtered.slice(0, visibleCount);
+  const canSeeMore = visibleCount < filtered.length;
+  const canSeeLess = visibleCount > CASES_PAGE_SIZE;
 
   const openCount = alerts.filter((a) => a.current_status !== "CLOSED").length;
   const mineCount = alerts.filter((a) => a.current_status !== "CLOSED" && isMine(user, a)).length;
@@ -65,7 +75,7 @@ function CoordinationSection() {
   return (
     <div className="space-y-3">
       <div>
-        <h2 className="text-lg font-semibold">Coordination - assigned cases</h2>
+        <h2 className="text-[15px] font-bold">Coordination - assigned cases</h2>
         <p className="text-sm text-slate-600">
           Every liquidity, anomaly, and data-quality alert is automatically assigned to a stakeholder based on
           severity and type, then walks a fixed escalation ladder (Agent → Field Officer → Provider Operations →
@@ -107,6 +117,27 @@ function CoordinationSection() {
           <AlertCaseCard key={a.id} alert={a} onChanged={handleChanged} />
         ))}
       </div>
+
+      {(canSeeMore || canSeeLess) && (
+        <div className="flex items-center justify-center gap-3 pt-1">
+          {canSeeMore && (
+            <button
+              onClick={() => setVisibleCount((c) => Math.min(c + CASES_PAGE_SIZE, filtered.length))}
+              className="rounded-lg border border-slate-300 bg-white px-4 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
+            >
+              See more
+            </button>
+          )}
+          {canSeeLess && (
+            <button
+              onClick={() => setVisibleCount(CASES_PAGE_SIZE)}
+              className="rounded-lg border border-slate-300 bg-white px-4 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
+            >
+              See less
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -156,7 +187,7 @@ function EvidenceSection() {
   return (
     <div className="space-y-3">
       <div>
-        <h2 className="text-lg font-semibold">Detection evidence</h2>
+        <h2 className="text-[15px] font-bold">Detection evidence</h2>
         <p className="text-sm text-slate-600">
           Two independent, explainable checks per provider: a burst-activity detector (frequency + account
           clustering) and a per-agent historical baseline (is this transaction unusual for what this specific agent
@@ -217,7 +248,11 @@ export default function AnomalyReviewPage() {
   return (
     <div className="space-y-10">
       <div>
-        <h1 className="text-xl font-semibold mb-1">Anomaly review &amp; coordination</h1>
+        <h1 className="text-[22px] font-extrabold mb-1 tracking-tight">Alerts &amp; coordination</h1>
+        <p className="text-[13.5px] text-slate-500 max-w-[600px] leading-relaxed">
+          Every alert shows its evidence and confidence, and is routed to a named owner with a recommended next
+          step. Advisory signals for human review &mdash; never a fraud determination.
+        </p>
       </div>
       <CoordinationSection />
       <EvidenceSection />
