@@ -22,12 +22,37 @@ AGENT_IDS = [agent_id for agent_id, _, _ in AGENTS]
 
 NORMAL_AMOUNT_RANGE = (300.0, 5_000.0)
 NORMAL_CASH_OUT_SHARE = 0.55
-NORMAL_TICK_PROBABILITY = 0.3  # chance a given agent generates a tx this tick
+# Chance a given agent+provider generates a tx this tick. Calibrated against
+# this system's OWN definition of a realistic day (historical_seed.py's
+# DAILY_TX_RANGE = 18-45/day/agent/provider): at TICK_SECONDS=8, a day is
+# 10,800 ticks, and the NORMAL_HOUR_MULTIPLIER below averages ~0.854, so
+# 0.0035 * 10,800 * 0.854 =~ 32/day - mid-range. The previous value (0.3)
+# produced ~120 transactions/hour/agent/provider (measured directly against
+# the running database) - about 100x too many for a single small outlet,
+# and the main reason the derived cash balance kept drifting to unrealistic
+# multi-million-taka deficits within a single day even after bounding the
+# balance to a rolling window (see services/cash.py on the aggregator side).
+NORMAL_TICK_PROBABILITY = 0.0035
 
 EID_AMOUNT_RANGE = (500.0, 8_000.0)
 EID_CASH_OUT_SHARE = 0.85  # Eid demand is dominated by customers withdrawing cash
 EID_TICK_PROBABILITY = 0.8
 EID_DEFAULT_COUNT_PER_AGENT = 5
+
+# Hour-of-day multiplier for the ambient "normal" mode tick probability -
+# mirrors historical_seed.py's HOUR_WEIGHTS shape so a full day of live
+# simulation looks like the same realistic business-hours rhythm as the
+# offline backfill, instead of a flat rate at every hour (uniform-random
+# reads as obviously synthetic, and doesn't "simulate daily transactions"
+# the way a real outlet actually behaves). Not applied to eid_spike mode,
+# which is already an explicit, time-bounded demand scenario.
+NORMAL_HOUR_MULTIPLIER = (
+    [0.15] * 6  # 00:00-05:59  quiet
+    + [0.6] * 4  # 06:00-09:59  opening up
+    + [1.5] * 10  # 10:00-19:59  core business hours
+    + [0.8] * 2  # 20:00-21:59  evening wind-down
+    + [0.3] * 2  # 22:00-23:59  late
+)
 
 
 def _account_ref() -> str:
@@ -162,6 +187,7 @@ def tick(now: Optional[datetime] = None) -> None:
         state.scenario = ScenarioState()  # revert to normal once the scenario window ends
 
     active = state.scenario if (state.scenario.until and now < state.scenario.until) else None
+    normal_probability = NORMAL_TICK_PROBABILITY * NORMAL_HOUR_MULTIPLIER[now.hour]
 
     for provider in PROVIDERS:
         if provider in state.paused_providers:
@@ -171,7 +197,7 @@ def tick(now: Optional[datetime] = None) -> None:
                 if random.random() < EID_TICK_PROBABILITY:
                     generate_eid_spike(provider, agent_id, count=1, multiplier=active.multiplier, now=now)
             else:
-                if random.random() < NORMAL_TICK_PROBABILITY:
+                if random.random() < normal_probability:
                     generate_normal(provider, agent_id, count=1, now=now)
 
 

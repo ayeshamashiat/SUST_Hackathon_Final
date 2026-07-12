@@ -5,7 +5,6 @@ from sqlmodel import Session, select
 
 from app.auth.deps import get_current_user
 from app.auth.models import User, UserRole
-from app.config import CASH_OPENING_BALANCE
 from app.db import get_shared_db
 from app.models import ProviderBalance, TransactionProjection
 from app.schemas import (
@@ -19,7 +18,7 @@ from app.schemas import (
 )
 from app.services import anomaly as anomaly_service
 from app.services import forecast as forecast_service
-from app.services.cash import PROVIDERS, evaluate_cash
+from app.services.cash import PROVIDERS, compute_cash_balance, evaluate_cash
 from app.services.confidence import provider_confidence, weakest
 
 router = APIRouter(prefix="/aggregate", tags=["aggregate"])
@@ -139,7 +138,13 @@ def get_agent_cash_trend(
     """Reconstructs the shared cash-reserve balance over time by replaying
     transactions_projection deltas bucket by bucket, the same signed-amount
     convention as services/cash.py - there's no stored balance history, so
-    this is derived fresh from the same source of truth on every call."""
+    this is derived fresh from the same source of truth on every call.
+
+    The carried-in balance anchors on compute_cash_balance's own rolling
+    window (evaluated as of window_start), not a replay from
+    CASH_OPENING_BALANCE across all-time history - the same unbounded-drift
+    bug documented in services/cash.py's module docstring applied here too
+    before this fix."""
     _require_agent_scope(current_user, agent_id)
 
     rows = list(
@@ -158,11 +163,7 @@ def get_agent_cash_trend(
 
     # Balance carried in from before the window, so the first bucket's
     # cash_balance reflects everything that happened prior to it.
-    balance = CASH_OPENING_BALANCE
-    for row in rows:
-        if row.occurred_at >= window_start:
-            break
-        balance += -row.amount if row.type == "cash_out" else row.amount
+    balance, _ = compute_cash_balance(session, agent_id, now=window_start)
 
     points: list[CashTrendPointOut] = []
     row_idx = 0

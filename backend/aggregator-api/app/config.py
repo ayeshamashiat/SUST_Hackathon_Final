@@ -44,6 +44,14 @@ settings = Settings()
 # is a documented limitation, not a hidden guess.
 CASH_OPENING_BALANCE = 80_000.0
 
+# How far back compute_cash_balance sums transaction deltas from - bounds
+# the derived cash figure to "cash on hand recently" rather than an
+# unbounded cumulative ledger since the dawn of the data (see cash.py's
+# module docstring for the bug this fixes: summing all-time history against
+# one fixed opening balance drifted to roughly -3.2M BDT after 90 days of
+# backfilled history).
+CASH_BALANCE_WINDOW_HOURS = 24.0
+
 # --- Forecast tuning (ported from the earlier single-service prototype's
 # analytics/forecaster.py - same reasoning, adapted to shared_db) ----------
 FORECAST_LOOKBACK_MINUTES = 45
