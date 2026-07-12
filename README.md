@@ -131,39 +131,46 @@ npm run build
 
 ```mermaid
 flowchart TB
-    subgraph SIM["Simulation Engine (backend/app/simulation)"]
-        SEED["seed.py<br/>agents x providers, opening balances"]
-        TICK["engine.py<br/>asyncio background loop, tick() on TICK_SECONDS"]
-        DEGRADE["engine.py set_feed_frozen()<br/>(stale / conflicting via frozen flag + note)"]
+    subgraph SIM["Simulation Engine (provider-api/app/simulator)"]
+        SEED["historical_seed.py + seed.py<br/>per-provider opening balances"]
+        TICK["engine.py<br/>asyncio tick loop, writes one provider DB at a time"]
+        DEGRADE["/simulator/feed-delay<br/>stale / conflicting simulation"]
     end
 
-    subgraph DB["SQLite (SQLModel) - backend/app/models/models.py"]
-        T_PROV["Provider"]
-        T_AGENT["Agent"]
-        T_USER["User"]
-        T_CASH["CashDrawer"]
-        T_BAL["ProviderBalance"]
-        T_TX["Transaction"]
-        T_FEED["DataFeedStatus"]
-        T_ALERT["Alert / AlertEvent"]
-        T_CASE["Case / CaseEvent"]
+    subgraph PG["PostgreSQL (SQLModel) — 5 databases, GRANT-enforced boundaries"]
+        subgraph PROV["Provider DBs: bkash_db / nagad_db / rocket_db"]
+            T_TX_P["transactions"]
+            T_BAL_P["balances"]
+        end
+        subgraph SHARED["shared_db — sync-service writes, aggregator-api SELECT only"]
+            T_TX_S["transactions_projection"]
+            T_BAL_S["provider_balances + sync_state"]
+        end
+        subgraph AGG["aggregator_db — aggregator-api read-write"]
+            T_USER["users"]
+            T_ALERT["alerts / case_events"]
+        end
     end
 
-    subgraph ANALYTICS["Analytics (backend/app/analytics)"]
-        FORECAST["forecaster.py<br/>forecast_cash / forecast_provider (EWMA burn-rate)"]
-        DETECT["anomaly.py<br/>detect_velocity_spike (z-score) - only detector implemented"]
+    subgraph SYNC["sync-service (backend/sync-service)"]
+        SYNC_LOOP["sync.py<br/>poll provider DBs -> idempotent projection"]
     end
 
-    subgraph ALERTS["Alert & Coordination Engine (backend/app)"]
-        ENGINE["alerts/engine.py evaluate_agent<br/>thresholds -> Alert + evidence + confidence"]
-        ROUTE["alerts/routing.py get_routing()<br/>category + provider -> stakeholder role"]
-        CASEWF["cases/workflow.py apply_update<br/>NEW -> ACKNOWLEDGED -> IN_PROGRESS -> ESCALATED -> RESOLVED"]
-        NARR["alerts/templates.py<br/>EN / BN / Banglish, careful language"]
+    subgraph ANALYTICS["Analytics (aggregator-api/app/services)"]
+        FORECAST["forecast.py + cash.py<br/>EWMA burn-rate, derived cash balance"]
+        DETECT["anomaly.py<br/>z-score + account clustering"]
     end
 
-    subgraph API["FastAPI (backend/app/api, backend/app/main.py)"]
+    subgraph ALERTS["Alert & Coordination Engine (aggregator-api/app/cases)"]
+        ENGINE["engine.py evaluate_all<br/>thresholds -> Alert + evidence + confidence"]
+        ROUTE["routing.py<br/>category + provider -> stakeholder role"]
+        CASEWF["workflow.py<br/>ASSIGNED -> ACK -> UNDER_REVIEW -> RESOLVED"]
+        NARR["narratives.py<br/>EN / BN / Banglish, careful language"]
+    end
+
+    subgraph API["aggregator-api (port 8000, frontend-facing)"]
         AUTH["/auth (login, me)"]
-        REST["/agents (+ /balances /transactions /forecast)<br/>/alerts /cases /metrics<br/>/aggregate/forecast /simulation /simulate"]
+        REST["/aggregate/* (balances, forecast, anomaly, transactions)<br/>/alerts (list, acknowledge, escalate, resolve)"]
     end
 
     subgraph FE["Next.js frontend (frontend/src/app)"]
@@ -177,21 +184,22 @@ flowchart TB
         RISK["/risk"]
     end
 
-    SEED --> DB
-    TICK --> T_TX
-    TICK --> T_BAL
-    DEGRADE --> T_FEED
-    T_TX --> FORECAST
-    T_TX --> DETECT
-    T_FEED --> FORECAST
-    T_FEED --> DETECT
+    SEED --> PROV
+    TICK --> T_TX_P
+    TICK --> T_BAL_P
+    DEGRADE --> T_TX_P
+    PROV --> SYNC_LOOP
+    SYNC_LOOP --> SHARED
+    T_TX_S --> FORECAST
+    T_TX_S --> DETECT
+    T_BAL_S --> FORECAST
     FORECAST --> ENGINE
     DETECT --> ENGINE
     ENGINE --> ROUTE --> T_ALERT
-    ROUTE --> CASEWF --> T_CASE
+    ROUTE --> CASEWF --> T_ALERT
     ENGINE --> NARR
+    SHARED --> REST
     T_ALERT --> REST
-    T_CASE --> REST
     T_USER --> AUTH
     AUTH --> FE
     REST --> DASH
@@ -203,23 +211,23 @@ flowchart TB
     REST --> RISK
 ```
 
-> No WebSocket route exists in the backend (no `/ws/live` anywhere under `backend/app`) — real-time updates are polling-based only. The frontend has no `/cases/[id]`, `/scenarios`, or `/metrics` pages; it is organized around role-based routes matching the `UserRole` enum (AGENT, FIELD_OFFICER, AREA_MANAGER, PROVIDER_OPS, RISK_COMPLIANCE, MANAGEMENT) rather than the feature-based pages originally planned.
+> Three Docker Compose services (`provider-api`, `sync-service`, `aggregator-api`) share one Postgres instance with five databases. The frontend talks only to `aggregator-api` on port 8000; `provider-api` and `sync-service` are internal. Real-time updates are polling-based (no WebSocket). Provider isolation is enforced at the Postgres `GRANT` layer — `aggregator-api` has no provider DB credentials and can only `SELECT` from `shared_db`.
 
 ### Component notes
 
-- **Provider boundary**: `ProviderBalance` rows are keyed by `(agent_id, provider_id)` and are never summed into a single "combined wallet" value in storage — only displayed side by side. `Provider` is a first-class table (not an enum), so bKash/Nagad/Rocket are real rows, not hardcoded strings. No code path converts or transfers value between providers.
-- **Validation & metrics**: the `/metrics` endpoint reports proxy metrics for sync latency, forecast lead time, anomaly precision/recall, alert explanation coverage, and per-provider sync health so the demo can show operational evidence without pretending to be a production observability stack.
-- **Simulation Engine**: the only source of transactions/balances (no real provider APIs are called, per challenge constraints). Scenario presets (A–D from the brief, see `simulation/profiles.py`) are parameter sets fed into the same generator, not special-cased code paths — this keeps the demo and the "real" logic identical.
-- **Analytics**: pure functions over `Transaction`/`ProviderBalance`/`DataFeedStatus` history — deterministic, unit-testable, no external calls. Currently only `detect_velocity_spike` is implemented in `anomaly.py`; near-identical-amount, balance-reconciliation, and cross-provider-linkage detectors are not yet built (tracked as future work, not implemented). This is what satisfies the "use AI/analytics meaningfully" requirement without any LLM dependency.
-- **Alert & Coordination Engine**: the only place that writes `Alert`/`AlertEvent`/`Case`/`CaseEvent` rows (`AlertEvent` is an audit log for alert state changes, parallel to `CaseEvent`). Routing table is a static, documented mapping (alert category + provider → stakeholder role) — explicit and auditable rather than implicit. Case workflow states are `NEW`, `ACKNOWLEDGED`, `IN_PROGRESS`, `ESCALATED`, `RESOLVED` (see `CaseStatus` in `models.py`).
+- **Provider boundary**: bKash, Nagad, and Rocket each have their own physically separate Postgres database (`bkash_db`, `nagad_db`, `rocket_db`). `provider-api` holds one credential per provider and can only connect to its own database; `sync-service` is the only other role that can read provider data (read-only). `aggregator-api` has no provider DB connection string at all — it reads the sync projection in `shared_db` only. No code path converts or transfers value between providers.
+- **Sync projection**: `sync-service` polls each provider database and idempotently projects new transactions and current balances into `shared_db`. It is the sole writer to `shared_db`; `aggregator-api` reads via a separate `shared_service` role with `SELECT` only.
+- **Simulation Engine**: `provider-api` is the only source of provider transactions/balances (no real provider APIs are called). Scenario presets are parameter sets fed into the same generator, not special-cased code paths.
+- **Analytics**: pure functions over `shared_db` projections — EWMA forecasting, derived cash balance, and rule-based anomaly detection (z-score + account clustering). Deterministic, unit-testable, no external calls.
+- **Alert & Coordination Engine**: background loop in `aggregator-api` writes `Alert` + `CaseEvent` rows to `aggregator_db`. Routing table maps alert category + provider → stakeholder role. Case workflow: `ASSIGNED` → `ACKNOWLEDGED` → `UNDER_REVIEW` → `{MONITORING, ESCALATED, RESOLVED}` → `CLOSED`.
 - **Narrative templates**: parameterized strings per alert type/language, filled with evidence values computed upstream — templates never invent evidence, they only phrase it.
-- **API layer**: stateless REST only — there is no WebSocket route in the backend; the frontend polls. Routers: `/auth`, `/agents` (with `/agents/{id}/balances`, `/agents/{id}/transactions`, `/agents/{id}/forecast` nested under it, not standalone), `/alerts`, `/cases`, `/metrics`, `/aggregate/forecast`, `/simulation`, `/simulate`. All endpoints read from the same DB the analytics/alert engines write to, so the frontend never talks to the simulation directly.
-- **Frontend**: role-oriented pages under `frontend/src/app` — `/`, `/login`, `/agent`, `/field-officer`, `/alerts`, `/operations`, `/management`, `/risk` — mapped to the `UserRole` enum rather than a feature-based page list, matching the brief's distinct stakeholder needs (Section 5).
-- **Auth**: backed by a `User` table (`backend/app/models/models.py`) and JWT bearer tokens (`backend/app/core/security.py`, `backend/app/core/deps.py`), issued via `POST /auth/login`. Accounts are predetermined/seeded only (`backend/app/simulation/seed.py`) — no self-registration and no customer login, per Section 5. Every API route (except `/`, `/health`, `/auth/login`) requires a valid token, and each role's data/case-mutation access is scoped server-side (see [Demo login credentials](#demo-login-credentials)).
+- **API layer**: `aggregator-api` is the only frontend-facing service. Stateless REST only; the frontend polls. Routers: `/auth`, `/aggregate/*`, `/alerts`. The frontend never talks to `provider-api` or `sync-service` directly.
+- **Frontend**: role-oriented pages under `frontend/src/app` — `/`, `/login`, `/agent`, `/field-officer`, `/alerts`, `/operations`, `/management`, `/risk` — mapped to the `UserRole` enum.
+- **Auth**: `User` table in `aggregator_db`, JWT bearer tokens, issued via `POST /auth/login`. Accounts are predetermined/seeded only — no self-registration. Every API route (except `/health`, `/auth/login`) requires a valid token, with per-role data scoping enforced server-side (see [Demo login credentials](#demo-login-credentials)).
 
 ### Provider boundary & real-world integration limits
 
-This prototype represents bKash/Nagad/Rocket as three logically separate simulated systems sharing one physical cash observation point. It does not integrate with, authenticate against, or move value through any real provider API. "Unified view" means *read-side aggregation for display and analytics only* — never a merged balance, shared ledger, or cross-provider settlement. This boundary is enforced at the data model level (separate `ProviderBalance` rows, no cross-provider transfer operation exists in the codebase) and is called out explicitly in `docs/RESPONSIBLE_DESIGN.md` (added Pass 2).
+This prototype represents bKash/Nagad/Rocket as three logically separate simulated systems sharing one physical cash observation point. It does not integrate with, authenticate against, or move value through any real provider API. "Unified view" means *read-side aggregation for display and analytics only* — never a merged balance, shared ledger, or cross-provider settlement. This boundary is enforced at the Postgres permission layer (separate databases, restricted roles) and at the data model level (no cross-provider transfer operation exists in the codebase), and is called out explicitly in `docs/RESPONSIBLE_DESIGN.md`.
 
 ---
 

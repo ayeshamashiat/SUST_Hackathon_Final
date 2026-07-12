@@ -1,37 +1,44 @@
 flowchart TB
-    subgraph SIM["Simulation Engine (backend/app/simulation)"]
-        SEED["seed.py<br/>agents x providers, opening balances"]
-        TICK["engine.py<br/>asyncio background loop, tick() on TICK_SECONDS"]
-        DEGRADE["engine.py set_feed_frozen()<br/>(stale / conflicting via frozen flag + note)"]
+    subgraph SIM["Simulation Engine (provider-api/app/simulator)"]
+        SEED["historical_seed.py + seed.py<br/>per-provider opening balances"]
+        TICK["engine.py<br/>asyncio tick loop, writes one provider DB at a time"]
+        DEGRADE["/simulator/feed-delay<br/>stale / conflicting simulation"]
     end
 
-    subgraph DB["SQLite (SQLModel) - backend/app/models/models.py"]
-        T_PROV["Provider"]
-        T_AGENT["Agent"]
-        T_USER["User"]
-        T_CASH["CashDrawer"]
-        T_BAL["ProviderBalance"]
-        T_TX["Transaction"]
-        T_FEED["DataFeedStatus"]
-        T_ALERT["Alert / AlertEvent"]
-        T_CASE["Case / CaseEvent"]
+    subgraph PG["PostgreSQL (SQLModel) — 5 databases, GRANT-enforced boundaries"]
+        subgraph PROV["Provider DBs: bkash_db / nagad_db / rocket_db"]
+            T_TX_P["transactions"]
+            T_BAL_P["balances"]
+        end
+        subgraph SHARED["shared_db — sync-service writes, aggregator-api SELECT only"]
+            T_TX_S["transactions_projection"]
+            T_BAL_S["provider_balances + sync_state"]
+        end
+        subgraph AGG["aggregator_db — aggregator-api read-write"]
+            T_USER["users"]
+            T_ALERT["alerts / case_events"]
+        end
     end
 
-    subgraph ANALYTICS["Analytics (backend/app/analytics)"]
-        FORECAST["forecaster.py<br/>forecast_cash / forecast_provider (EWMA burn-rate)"]
-        DETECT["anomaly.py<br/>detect_velocity_spike (z-score) - only detector implemented"]
+    subgraph SYNC["sync-service (backend/sync-service)"]
+        SYNC_LOOP["sync.py<br/>poll provider DBs -> idempotent projection"]
     end
 
-    subgraph ALERTS["Alert & Coordination Engine (backend/app)"]
-        ENGINE["alerts/engine.py evaluate_agent<br/>thresholds -> Alert + evidence + confidence"]
-        ROUTE["alerts/routing.py get_routing()<br/>category + provider -> stakeholder role"]
-        CASEWF["cases/workflow.py apply_update<br/>NEW -> ACKNOWLEDGED -> IN_PROGRESS -> ESCALATED -> RESOLVED"]
-        NARR["alerts/templates.py<br/>EN / BN / Banglish, careful language"]
+    subgraph ANALYTICS["Analytics (aggregator-api/app/services)"]
+        FORECAST["forecast.py + cash.py<br/>EWMA burn-rate, derived cash balance"]
+        DETECT["anomaly.py<br/>z-score + account clustering"]
     end
 
-    subgraph API["FastAPI (backend/app/api, backend/app/main.py)"]
+    subgraph ALERTS["Alert & Coordination Engine (aggregator-api/app/cases)"]
+        ENGINE["engine.py evaluate_all<br/>thresholds -> Alert + evidence + confidence"]
+        ROUTE["routing.py<br/>category + provider -> stakeholder role"]
+        CASEWF["workflow.py<br/>ASSIGNED -> ACK -> UNDER_REVIEW -> RESOLVED"]
+        NARR["narratives.py<br/>EN / BN / Banglish, careful language"]
+    end
+
+    subgraph API["aggregator-api (port 8000, frontend-facing)"]
         AUTH["/auth (login, me)"]
-        REST["/agents (+ /balances /transactions /forecast)<br/>/alerts /cases /metrics<br/>/aggregate/forecast /simulation /simulate"]
+        REST["/aggregate/* (balances, forecast, anomaly, transactions)<br/>/alerts (list, acknowledge, escalate, resolve)"]
     end
 
     subgraph FE["Next.js frontend (frontend/src/app)"]
@@ -45,21 +52,22 @@ flowchart TB
         RISK["/risk"]
     end
 
-    SEED --> DB
-    TICK --> T_TX
-    TICK --> T_BAL
-    DEGRADE --> T_FEED
-    T_TX --> FORECAST
-    T_TX --> DETECT
-    T_FEED --> FORECAST
-    T_FEED --> DETECT
+    SEED --> PROV
+    TICK --> T_TX_P
+    TICK --> T_BAL_P
+    DEGRADE --> T_TX_P
+    PROV --> SYNC_LOOP
+    SYNC_LOOP --> SHARED
+    T_TX_S --> FORECAST
+    T_TX_S --> DETECT
+    T_BAL_S --> FORECAST
     FORECAST --> ENGINE
     DETECT --> ENGINE
     ENGINE --> ROUTE --> T_ALERT
-    ROUTE --> CASEWF --> T_CASE
+    ROUTE --> CASEWF --> T_ALERT
     ENGINE --> NARR
+    SHARED --> REST
     T_ALERT --> REST
-    T_CASE --> REST
     T_USER --> AUTH
     AUTH --> FE
     REST --> DASH
