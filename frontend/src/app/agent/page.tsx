@@ -1,15 +1,19 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ActiveAlerts } from "@/components/ActiveAlerts";
 import { AiSummaryPanel } from "@/components/AiSummaryPanel";
 import { AlertCaseCard } from "@/components/AlertCaseCard";
 import { BalanceCard } from "@/components/BalanceCard";
+import { CashTrendChart } from "@/components/CashTrendChart";
 import { ConfidenceBadge } from "@/components/Badges";
+import { TransactionStream } from "@/components/TransactionStream";
+import { WhatIfSimulator } from "@/components/WhatIfSimulator";
 import { api } from "@/lib/api";
 import { summarizeQueue } from "@/lib/aiSummary";
 import { useAuth } from "@/lib/auth";
 import { PROVIDER_COLOR, PROVIDER_LABEL, type ProviderId } from "@/lib/agents";
-import type { AgentAggregateOut, AlertOut, ForecastOut } from "@/lib/types";
+import type { AgentAggregateOut, AlertOut, CashTrendPointOut, ForecastOut, TransactionOut } from "@/lib/types";
 
 const POLL_MS = 5000;
 
@@ -19,6 +23,8 @@ export default function AgentDashboard() {
   const [aggregate, setAggregate] = useState<AgentAggregateOut | null>(null);
   const [forecasts, setForecasts] = useState<ForecastOut[]>([]);
   const [cases, setCases] = useState<AlertOut[]>([]);
+  const [transactions, setTransactions] = useState<TransactionOut[]>([]);
+  const [cashTrend, setCashTrend] = useState<CashTrendPointOut[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -27,15 +33,19 @@ export default function AgentDashboard() {
 
     async function refresh() {
       try {
-        const [agg, fc, myCases] = await Promise.all([
+        const [agg, fc, myCases, txns, trend] = await Promise.all([
           api.getAgentAggregate(agentId!),
           api.getForecast(agentId!),
           api.getAlerts({ agentId: agentId! }),
+          api.getTransactions(agentId!),
+          api.getCashTrend(agentId!),
         ]);
         if (!cancelled) {
           setAggregate(agg);
           setForecasts(fc);
           setCases(myCases);
+          setTransactions(txns);
+          setCashTrend(trend);
           setError(null);
         }
       } catch (e) {
@@ -103,6 +113,15 @@ export default function AgentDashboard() {
             <span className="text-slate-600">Overall confidence for your outlet</span>
             <ConfidenceBadge level={aggregate.overall_confidence} />
           </div>
+
+          <div className="grid gap-4 lg:grid-cols-[1.6fr_1fr]">
+            <CashTrendChart points={cashTrend} />
+            <ActiveAlerts alerts={cases} />
+          </div>
+
+          <TransactionStream transactions={transactions} />
+
+          <WhatIfSimulator forecasts={forecasts} />
         </>
       )}
 

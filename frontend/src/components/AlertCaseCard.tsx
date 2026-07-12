@@ -2,7 +2,9 @@
 
 import { Fragment, useState } from "react";
 import { CaseStatusBadge, ConfidenceBadge, OwnerBadge, SeverityBadge } from "@/components/Badges";
+import { CaseTimeline } from "@/components/CaseTimeline";
 import { RecommendationList } from "@/components/RecommendationList";
+import { ResolutionAnalytics } from "@/components/ResolutionAnalytics";
 import { RiskContributionBar } from "@/components/RiskContributionBar";
 import { api } from "@/lib/api";
 import { formatBDT, formatRelative } from "@/lib/format";
@@ -107,22 +109,16 @@ export function AlertCaseCard({ alert, onChanged }: { alert: AlertOut; onChanged
             <p className="text-slate-800">{messageFor(alert, lang)}</p>
           </div>
 
-<<<<<<< HEAD
           {alert.confidence === "LOW" && (
-            <div className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2">
+            <div className="rounded-xl border border-amber-300 bg-amber-50 px-3.5 py-2.5">
               <div className="text-xs uppercase tracking-wide text-amber-800 mb-1">Confidence reduced</div>
               <div className="text-amber-900">{alert.confidence_note}</div>
             </div>
           )}
 
-          <div className="rounded-lg bg-slate-50 border border-slate-200 px-3 py-2">
-            <div className="text-xs uppercase tracking-wide text-slate-500 mb-1">Recommended next step</div>
-            <div className="text-slate-800">{alert.recommended_action}</div>
-=======
           <div className="rounded-xl bg-[#FAFBFD] border border-[#EFF1F6] px-3.5 py-3">
             <div className="text-xs uppercase tracking-wide text-slate-400 mb-1">Recommended next step</div>
             <div className="text-slate-800 font-medium">{alert.recommended_action}</div>
->>>>>>> d62e1759c36e9580ad46432e5fa3e2a264390af4
           </div>
 
           <RecommendationList actions={recommendations} />
@@ -240,26 +236,13 @@ export function AlertCaseCard({ alert, onChanged }: { alert: AlertOut; onChanged
             </div>
           )}
 
+          <ResolutionAnalytics alert={alert} />
+
           <div>
-            <div className="text-xs uppercase tracking-wide text-slate-500 mb-1.5">
-              Audit trail ({alert.audit_trail.length})
+            <div className="text-xs uppercase tracking-wide text-slate-500 mb-2">
+              Timeline ({alert.audit_trail.length})
             </div>
-            <ol className="space-y-1 text-xs text-slate-600">
-              {alert.audit_trail.map((e) => (
-                <li key={e.id} className="flex gap-2">
-                  <span className="text-slate-400 tabular-nums">{formatRelative(e.created_at)}</span>
-                  <span className="font-medium text-slate-700">{e.event_type.replace(/_/g, " ")}</span>
-                  <span className="text-slate-500">by {e.actor}</span>
-                  {e.new_owner && (
-                    <span className="text-slate-500">
-                      → {e.previous_owner ?? "—"} to {e.new_owner}
-                    </span>
-                  )}
-                  {e.note && <span className="text-slate-500 italic">&ldquo;{e.note}&rdquo;</span>}
-                  {e.reason && <span className="text-slate-500 italic">reason: {e.reason}</span>}
-                </li>
-              ))}
-            </ol>
+            <CaseTimeline events={alert.audit_trail} />
           </div>
         </div>
       )}

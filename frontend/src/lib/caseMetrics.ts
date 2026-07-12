@@ -4,18 +4,38 @@
 // numbers that are already fully present in the data each dashboard fetches.
 import type { AlertOut } from "./types";
 
-function minutesBetween(a: string, b: string): number {
+export function minutesBetween(a: string, b: string): number {
   return (new Date(b).getTime() - new Date(a).getTime()) / 60000;
 }
 
+function findEvent(alert: AlertOut, type: string) {
+  return alert.audit_trail.find((e) => e.event_type === type);
+}
+
+export function timeToAssignMinutes(alert: AlertOut): number | null {
+  const assigned = findEvent(alert, "ASSIGNED");
+  return assigned ? minutesBetween(alert.created_at, assigned.created_at) : null;
+}
+
 export function timeToAcknowledgeMinutes(alert: AlertOut): number | null {
-  const ack = alert.audit_trail.find((e) => e.event_type === "ACKNOWLEDGED");
+  const ack = findEvent(alert, "ACKNOWLEDGED");
   return ack ? minutesBetween(alert.created_at, ack.created_at) : null;
 }
 
+export function timeUnderReviewMinutes(alert: AlertOut): number | null {
+  const reviewStarted = findEvent(alert, "REVIEW_STARTED");
+  const resolved = findEvent(alert, "RESOLVED");
+  return reviewStarted && resolved ? minutesBetween(reviewStarted.created_at, resolved.created_at) : null;
+}
+
 export function timeToResolveMinutes(alert: AlertOut): number | null {
-  const done = alert.audit_trail.find((e) => e.event_type === "RESOLVED" || e.event_type === "CLOSED");
+  const done = findEvent(alert, "RESOLVED") ?? findEvent(alert, "CLOSED");
   return done ? minutesBetween(alert.created_at, done.created_at) : null;
+}
+
+export function totalResolutionMinutes(alert: AlertOut): number | null {
+  const closed = findEvent(alert, "CLOSED");
+  return closed ? minutesBetween(alert.created_at, closed.created_at) : null;
 }
 
 export function escalationCount(alert: AlertOut): number {

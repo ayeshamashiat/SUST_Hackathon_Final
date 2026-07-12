@@ -4,11 +4,25 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth";
 import { ROLE_LABEL } from "@/components/Badges";
+import type { UserRole } from "@/lib/types";
 
-const NAV_ITEMS = [
-  { href: "/", label: "Dashboard" },
-  { href: "/alerts", label: "Alerts & Cases" },
-] as const;
+const ROLE_NAV: Record<UserRole, { href: string; label: string }[]> = {
+  AGENT: [{ href: "/agent", label: "Your Outlet" }],
+  FIELD_OFFICER: [
+    { href: "/field-officer", label: "Field Dashboard" },
+    { href: "/alerts", label: "Anomaly Review" },
+  ],
+  AREA_MANAGER: [{ href: "/management", label: "Area Overview" }],
+  PROVIDER_OPS: [
+    { href: "/operations", label: "Operations" },
+    { href: "/alerts", label: "Anomaly Review" },
+  ],
+  RISK_COMPLIANCE: [
+    { href: "/risk", label: "Risk Review" },
+    { href: "/alerts", label: "Anomaly Review" },
+  ],
+  MANAGEMENT: [{ href: "/management", label: "Management" }],
+};
 
 function initials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -21,6 +35,7 @@ function initials(name: string): string {
 export function Sidebar() {
   const pathname = usePathname();
   const { user, logout } = useAuth();
+  const navItems = user ? ROLE_NAV[user.role] ?? [] : [];
 
   return (
     <div className="w-[248px] shrink-0 h-screen sticky top-0 overflow-y-auto bg-white border-r border-slate-200 flex flex-col p-4">
@@ -35,7 +50,7 @@ export function Sidebar() {
       </div>
 
       <nav className="flex flex-col gap-1">
-        {NAV_ITEMS.map((item) => {
+        {navItems.map((item) => {
           const active = pathname === item.href;
           return (
             <Link
