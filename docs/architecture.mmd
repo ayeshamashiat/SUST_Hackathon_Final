@@ -1,0 +1,71 @@
+flowchart TB
+    subgraph SIM["Simulation Engine (backend/app/simulation)"]
+        SEED["seed.py<br/>agents x providers, opening balances"]
+        TICK["engine.py<br/>asyncio background loop, tick() on TICK_SECONDS"]
+        DEGRADE["engine.py set_feed_frozen()<br/>(stale / conflicting via frozen flag + note)"]
+    end
+
+    subgraph DB["SQLite (SQLModel) - backend/app/models/models.py"]
+        T_PROV["Provider"]
+        T_AGENT["Agent"]
+        T_USER["User"]
+        T_CASH["CashDrawer"]
+        T_BAL["ProviderBalance"]
+        T_TX["Transaction"]
+        T_FEED["DataFeedStatus"]
+        T_ALERT["Alert / AlertEvent"]
+        T_CASE["Case / CaseEvent"]
+    end
+
+    subgraph ANALYTICS["Analytics (backend/app/analytics)"]
+        FORECAST["forecaster.py<br/>forecast_cash / forecast_provider (EWMA burn-rate)"]
+        DETECT["anomaly.py<br/>detect_velocity_spike (z-score) - only detector implemented"]
+    end
+
+    subgraph ALERTS["Alert & Coordination Engine (backend/app)"]
+        ENGINE["alerts/engine.py evaluate_agent<br/>thresholds -> Alert + evidence + confidence"]
+        ROUTE["alerts/routing.py get_routing()<br/>category + provider -> stakeholder role"]
+        CASEWF["cases/workflow.py apply_update<br/>NEW -> ACKNOWLEDGED -> IN_PROGRESS -> ESCALATED -> RESOLVED"]
+        NARR["alerts/templates.py<br/>EN / BN / Banglish, careful language"]
+    end
+
+    subgraph API["FastAPI (backend/app/api, backend/app/main.py)"]
+        AUTH["/auth (login, me)"]
+        REST["/agents (+ /balances /transactions /forecast)<br/>/alerts /cases /metrics<br/>/aggregate/forecast /simulation /simulate"]
+    end
+
+    subgraph FE["Next.js frontend (frontend/src/app)"]
+        LOGIN["/login"]
+        DASH["/ dashboard"]
+        AL["/alerts"]
+        AGENT["/agent"]
+        FO["/field-officer"]
+        OPS["/operations"]
+        MGMT["/management"]
+        RISK["/risk"]
+    end
+
+    SEED --> DB
+    TICK --> T_TX
+    TICK --> T_BAL
+    DEGRADE --> T_FEED
+    T_TX --> FORECAST
+    T_TX --> DETECT
+    T_FEED --> FORECAST
+    T_FEED --> DETECT
+    FORECAST --> ENGINE
+    DETECT --> ENGINE
+    ENGINE --> ROUTE --> T_ALERT
+    ROUTE --> CASEWF --> T_CASE
+    ENGINE --> NARR
+    T_ALERT --> REST
+    T_CASE --> REST
+    T_USER --> AUTH
+    AUTH --> FE
+    REST --> DASH
+    REST --> AL
+    REST --> AGENT
+    REST --> FO
+    REST --> OPS
+    REST --> MGMT
+    REST --> RISK
